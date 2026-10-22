@@ -66,6 +66,10 @@ html,body{margin:0;background:var(--ground);color:var(--ink);font-family:var(--s
 .btn.done{background:var(--ok);border-color:var(--ok);color:#fff}
 .btn.undo{background:transparent;color:var(--ok);border-color:var(--ok)}
 .msg{font-size:13px;color:var(--ok);min-height:1em}
+.when{font-size:15px;font-weight:700;color:var(--accent)}
+.qsrc{border:1px solid var(--line);border-radius:10px;padding:10px 12px;display:flex;flex-direction:column;gap:6px;background:var(--ground)}
+.qsrc .txt.fold::after{background:linear-gradient(transparent,var(--ground))}
+a.more{text-decoration:none}
 .msg.err{color:var(--warn)}
 .empty{text-align:center;color:var(--muted);padding:32px 12px;border:1px dashed var(--line);border-radius:14px;font-size:15px}
 .login{display:flex;flex-direction:column;gap:12px;padding-top:20vh}
@@ -84,7 +88,7 @@ const WD='日月火水木金土';
 const md=d=>{const t=new Date(d+'T00:00:00');return (t.getMonth()+1)+'/'+t.getDate()+'('+WD[t.getDay()]+')'};
 const today=()=>new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Tokyo',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());
 const b64=s=>Uint8Array.from(atob(s),c=>c.charCodeAt(0));
-let KEY=null, IDX=null, POSTS=[], DAY=null, FILES={}, open={};
+let KEY=null, IDX=null, DAY=null, FILES={}, open={};
 let done=LS.get('gp_done',{});   // id -> 投稿した時刻
 
 async function derive(pass,salt,iter){
@@ -120,45 +124,82 @@ async function start(pass){
   await loadDay();
   LS.set('gp_pass',pass);
 }
+let MODE=LS.get('gp_mode','single'), SINGLES=[], QUOTES=[];
 async function loadDay(){
-  const d=IDX.days[DAY];
-  POSTS = d ? JSON.parse(new TextDecoder().decode(await getBin(d.f))) : [];
+  const d=IDX.days[DAY], q=(IDX.quotes||{})[DAY];
+  SINGLES = d ? JSON.parse(new TextDecoder().decode(await getBin(d.f))) : [];
+  // 引用は単独と同じカードで出す（time＝回の時刻・segs＝引用文・quote＝元）
+  QUOTES = q ? JSON.parse(new TextDecoder().decode(await getBin(q.f))).map(x=>({id:x.id,k:(x.kind==='buzz'?'🟨バズ':'🟦リスト')+'　'+(x.label||x.acc),time:x.slot,segs:[x.text],imgs:x.imgs,quote:x})) : [];
   render();
   // 画像は先に全部ほどいておく＝「Xで開く」を押した瞬間に渡せる（押した後に待つと iPhone が共有を止める）
-  for(const p of POSTS) for(const im of p.imgs){
+  for(const p of SINGLES.concat(QUOTES)) for(const im of p.imgs){
     if(FILES[im.f]) continue;
     getBin(im.f).then(buf=>{ FILES[im.f]=new File([buf],im.name,{type:'image/jpeg'}); const t=document.getElementById('th-'+im.f); if(t) t.src=URL.createObjectURL(FILES[im.f]); }).catch(()=>{});
   }
 }
 
-function nextId(){ const n=POSTS.find(p=>!done[p.id]); return n&&n.id; }
+// 本人「時間が来ても投稿できなかったら次自動で時間割り振り」：今日の次の1本が20分過ぎても出ていなければ、残りを今から組み直す
+// 決め事は schedule_times.py と同じ＝前の投稿から45〜100分・分は5の倍数を避ける・リストイン同士は3時間あける
+const toM=t=>{const [a,b]=(t||'99:99').split(':').map(Number);return a*60+b}, toT=m=>String(Math.floor(m/60)).padStart(2,'0')+':'+String(m%60).padStart(2,'0');
+const nowM=()=>{const d=new Date();return d.getHours()*60+d.getMinutes()};
+function sched(){
+  const key='gp_sched_'+DAY, S=LS.get(key,{});
+  const eff=p=>S[p.id]||p.time;
+  if(DAY===today()){
+    const rest=SINGLES.filter(p=>!done[p.id]).sort((a,b)=>toM(eff(a))-toM(eff(b)));
+    if(rest.length && nowM()>toM(eff(rest[0]))+20){
+      const doneT=SINGLES.filter(p=>done[p.id]).map(p=>toM(done[p.id]));
+      let t=Math.max(nowM()+1, doneT.length?Math.max(...doneT)+45:0);
+      let lastLi=Math.max(-1e9,...SINGLES.filter(p=>done[p.id]&&p.listin).map(p=>toM(done[p.id])));
+      const pool=rest.slice();
+      while(pool.length){
+        let i=pool.findIndex(p=>!p.listin||t-lastLi>=180); if(i<0) i=0;
+        const p=pool.splice(i,1)[0];
+        while(t%5===0) t++;
+        S[p.id]=toT(t); if(p.listin) lastLi=t;
+        t+=45+Math.floor(Math.random()*56);
+      }
+      S._at=toT(nowM()); LS.set(key,S);
+    }
+  }
+  return eff;
+}
+function list(){ return MODE==='quote'?QUOTES:SINGLES; }
 function render(){
   const app=document.getElementById('app'); app.textContent='';
   const ds=Object.keys(IDX.days).sort();
-  const n=POSTS.length, k=POSTS.filter(p=>done[p.id]).length;
+  const eff = MODE==='quote' ? (p=>p.time) : sched();
+  const L=list().slice().sort((a,b)=>toM(eff(a))-toM(eff(b)));
+  const n=L.length, k=L.filter(p=>done[p.id]).length;
+  const nq=(IDX.quotes&&IDX.quotes[DAY]||{}).n||0;
+  const tab=(m,lab)=>$('button',{class:'day'+(MODE===m?' sel':''),text:lab,onclick:()=>{MODE=m;LS.set('gp_mode',m);render();scrollTo(0,0);}});
   const top=$('div',{class:'top'},[
     $('div',{class:'bar'},[
-      $('div',{class:'days'},ds.map(d=>$('button',{class:'day'+(d===DAY?' sel':''),text:(d===today()?'今日 ':'')+md(d)+' '+IDX.days[d].n+'本',onclick:async()=>{DAY=d;LS.set('gp_day',d);await loadDay();}}))),
+      $('div',{class:'days'},ds.map(d=>$('button',{class:'day'+(d===DAY?' sel':''),text:(d===today()?'今日 ':'')+md(d),onclick:async()=>{DAY=d;LS.set('gp_day',d);await loadDay();}}))),
       $('button',{class:'icon',text:'更新',onclick:async e=>{e.target.textContent='…';try{IDX=await loadIndex();await loadDay();}catch(x){e.target.textContent='✕'}}})
     ]),
+    $('div',{class:'bar'},[tab('single','単独 '+((IDX.days[DAY]||{}).n||0)+'本'),tab('quote','引用 '+nq+'本')]),
     $('div',{class:'prog'},[$('span',{},[$('b',{text:k+'/'+n}),' 本 済み']),$('div',{class:'meter'},[$('i',{style:'width:'+(n?k/n*100:0)+'%'})])])
   ]);
   app.appendChild(top);
-  if(!n){ app.appendChild($('div',{class:'empty',text:'この日の投稿はまだありません。予約表で「予約に入れる」を押した物がここに出ます'})); }
-  const nx=nextId();
-  const rest=POSTS.filter(p=>!done[p.id]), fin=POSTS.filter(p=>done[p.id]).sort((a,b)=>done[b.id]<done[a.id]?-1:1);
-  rest.forEach(p=>app.appendChild(card(p,p.id===nx)));
-  if(fin.length){ app.appendChild($('div',{class:'sec',text:'投稿した（'+fin.length+'）'})); fin.forEach(p=>app.appendChild(card(p,false))); }
+  const S=LS.get('gp_sched_'+DAY,{});
+  if(MODE==='single' && S._at) app.appendChild($('div',{class:'tag',text:'↻ '+S._at+' に、出せていない分の時刻を今から組み直しました'}));
+  if(!n){ app.appendChild($('div',{class:'empty',text:MODE==='quote'?'この日の引用はまだありません（08:00・11:30・14:30・18:00・20:00 の回で届きます）':'この日の投稿はまだありません。予約表で「予約に入れる」を押した物がここに出ます'})); }
+  const rest=L.filter(p=>!done[p.id]), fin=L.filter(p=>done[p.id]).sort((a,b)=>done[b.id]<done[a.id]?-1:1);
+  const nx=rest[0]&&rest[0].id;
+  rest.forEach(p=>app.appendChild(card(p,p.id===nx,eff(p))));
+  if(fin.length){ app.appendChild($('div',{class:'sec',text:'投稿した（'+fin.length+'）'})); fin.forEach(p=>app.appendChild(card(p,false,eff(p)))); }
   app.appendChild($('div',{class:'foot',text:'更新 '+IDX.built}));
 }
 
-function card(p,isNext){
+function card(p,isNext,tm){
+  tm=tm||p.time;
   const isDone=!!done[p.id];
   const isOpen = open[p.id]!=null ? open[p.id] : isNext;
   const c=$('section',{class:'card'+(isNext?' next':'')+(isDone?' done':''),id:'c-'+p.id});
   const first=(p.segs[0]||'').split('\n')[0];
   const head=$('div',{class:'ch',onclick:()=>{open[p.id]=!isOpen;render();}},[
-    $('div',{class:'tm'+(p.time?'':' none'),text:p.time||'時刻なし'}),
+    $('div',{class:'tm'+(tm?'':' none'),text:!tm?'時刻なし':toM(tm)>=1440?'明日へ':tm}),
     $('div',{class:'one',text:first}),
     isDone?$('span',{class:'chk',text:'✓ '+done[p.id]}):$('span',{class:'tag',text:(p.segs.length>1?'ツリー'+p.segs.length+'段・':'')+(p.imgs.length?'画像'+p.imgs.length:'文字だけ')})
   ]);
@@ -166,6 +207,15 @@ function card(p,isNext){
   if(!isOpen) return c;
   const body=$('div',{class:'cb'});
   if(p.k) body.appendChild($('div',{class:'tag',text:p.k}));
+  // 次の1本は「あと◯分」を出す（今日だけ）。23:30 を過ぎる本は明日に回してもいい
+  if(isNext && DAY===today() && tm && !p.quote){ const d=toM(tm)-nowM(); body.appendChild($('div',{class:'when',text:d>0?'あと'+(d>=60?Math.floor(d/60)+'時間':'')+(d%60)+'分（'+tm+'）':'今出す'})); }
+  if(!p.quote && toM(tm)>23*60+30 && toM(tm)<99*60) body.appendChild($('div',{class:'msg err',text:toM(tm)>=1440?'今日のうちに入りません。明日に回すか、すぐ出してください':'23:30 を過ぎます。明日に回してもいいです'}));
+  if(p.quote){
+    const q=p.quote, src=$('div',{class:'txt fold',text:q.src||'（元の本文なし）'});
+    body.appendChild($('div',{class:'qsrc'},[$('div',{class:'sl',text:'元投稿 '+q.acc}),src,$('div',{class:'btns'},[
+      $('button',{class:'more',text:'全文を見る',onclick:e=>{src.classList.toggle('fold');e.target.textContent=src.classList.contains('fold')?'全文を見る':'たたむ';}}),
+      $('a',{class:'more',href:q.url,target:'_blank',rel:'noopener',text:'元を開く ↗'})])]));
+  }
   // 本人「画像ちっちゃい」：1枚は横幅いっぱい・2枚以上は2列。押すと全画面
   if(p.imgs.length) body.appendChild($('div',{class:'thumbs'+(p.imgs.length>1?' n2':'')},p.imgs.map(im=>$('img',{id:'th-'+im.f,alt:'',src:FILES[im.f]?URL.createObjectURL(FILES[im.f]):'',onclick:e=>{ const o=$('div',{class:'big',onclick:()=>o.remove()},[$('img',{src:e.target.src,alt:''})]); document.body.appendChild(o); }}))));
   const msg=$('div',{class:'msg'});
@@ -175,11 +225,12 @@ function card(p,isNext){
     $('button',{class:'btn',text:'Xで開く',onclick:()=>openX(p,files(),msg)}),
   ]);
   const subs=$('div',{class:'btns'},[
-    $('button',{class:'btn sub',text:p.segs.length>1?'1段目をコピー':'本文をコピー',onclick:()=>copy(p.segs[0],msg,p.segs.length>1?'1段目':'本文')}),
+    $('button',{class:'btn sub',text:p.quote?'引用文をコピー':p.segs.length>1?'1段目をコピー':'本文をコピー',onclick:()=>copy(p.segs[0],msg,p.segs.length>1?'1段目':'本文')}),
     p.imgs.length?$('button',{class:'btn sub',text:'画像を保存',onclick:()=>saveImgs(files(),msg)}):null
   ]);
   p.segs.forEach((s,i)=>{
     const seg=$('div',{class:'seg'});
+    if(p.quote) seg.appendChild($('div',{class:'sl',text:'引用文'}));
     if(p.segs.length>1) seg.appendChild($('div',{class:'sl',text:(i+1)+'段目'+(i===0?'（最初の投稿）':'（自分の投稿に返信で）')}));
     const tx=$('div',{class:'txt'+(s.length>140?' fold':''),text:s}); seg.appendChild(tx);
     if(s.length>140) seg.appendChild($('button',{class:'more',text:'全文を見る',onclick:e=>{tx.classList.toggle('fold');e.target.textContent=tx.classList.contains('fold')?'全文を見る':'たたむ';}}));
@@ -202,7 +253,8 @@ function copy(t,msg,lab){
 }
 // 本文はコピーもしておく＝X が本文を落とした時は長押しで貼るだけ。share は押したその場で呼ぶ（await を挟むと iPhone が止める）
 function openX(p,fs,msg){
-  const t=p.segs[0];
+  // 引用は最後に元の URL を付けて渡す＝X がその投稿の引用にする
+  const t=p.quote ? p.segs[0]+'\n'+p.quote.url : p.segs[0];
   try{ navigator.clipboard.writeText(t).catch(()=>{}); }catch(e){}
   if(p.imgs.length && fs.length<p.imgs.length){ msg.className='msg err'; msg.textContent='画像を読み込み中です。2〜3秒待ってもう一度押してください'; return; }
   const data=fs.length?{files:fs,text:t}:{text:t};
