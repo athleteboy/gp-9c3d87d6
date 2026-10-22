@@ -145,7 +145,7 @@ async function start(pass){
   DAY = LS.get('gp_day',null); if(!ds.includes(DAY)) DAY = ds.includes(t)?t:ds[0];
   await loadDay();
   LS.set('gp_pass',pass);
-  if(IDX.cfg){ try{ CFG=JSON.parse(new TextDecoder().decode(await getBin(IDX.cfg))); sendMarks(); }catch(e){} }
+  if(IDX.cfg){ try{ CFG=JSON.parse(new TextDecoder().decode(await getBin(IDX.cfg))); sendMarks(); render(); }catch(e){} }
 }
 let LEFT=[], leftOpen=false, MODE=LS.get('gp_mode','single'), SINGLES=[], QUOTES=[], MOVE=LS.get('gp_move',{});
 const QS=new URLSearchParams(location.search);
@@ -207,7 +207,28 @@ function sched(){
       S._at=toT(nowM()); LS.set(key,S);
     }
   }
+  if(DAY===today()) sendSched(eff);
   return eff;
+}
+// 本人「変わった時間で通知出せない？」：今日の残りの時刻をメモ欄へ（変わった時だけ）。PC の目覚ましが5分おきに読んで置き直す
+let schedT=null;
+function sendSched(eff){
+  const by={}; const rows=[];
+  SINGLES.slice().sort((a,b)=>toM(eff(a))-toM(eff(b))).forEach(p=>{ const m=/^\d+\s+(.+?)｜/.exec(p.k||''); const g=m?m[1]:'その他'; (by[g]=by[g]||[]).push(p); });
+  Object.entries(by).forEach(([g,ps])=>ps.forEach((p,i)=>{ if(!done[p.id]&&eff(p)&&toM(eff(p))<1440) rows.push({id:p.id,time:eff(p),g:g+' '+(i+1)+'/'+ps.length,first:(p.segs[0]||'').split('\n')[0].slice(0,60)}); }));
+  rows.sort((a,b)=>a.time<b.time?-1:1);
+  const sig=JSON.stringify(rows.map(r=>r.id+r.time));
+  if(LS.get('gp_sched_sig','')===DAY+sig) return;
+  clearTimeout(schedT); schedT=setTimeout(async()=>{
+    if(!CFG||!KEY||location.hostname==='127.0.0.1') return;
+    try{
+      const iv=crypto.getRandomValues(new Uint8Array(12));
+      const ct=new Uint8Array(await crypto.subtle.encrypt({name:'AES-GCM',iv},KEY,new TextEncoder().encode(JSON.stringify({day:DAY,at:new Date().toISOString(),rows}))));
+      const all=new Uint8Array(12+ct.length); all.set(iv); all.set(ct,12); let bin=''; all.forEach(b=>bin+=String.fromCharCode(b));
+      const r=await fetch('https://api.github.com/repos/'+CFG.repo+'/issues/'+CFG.issue+'/comments',{method:'POST',headers:{'Authorization':'Bearer '+CFG.token,'Accept':'application/vnd.github+json'},body:JSON.stringify({body:'gps1:'+btoa(bin)})});
+      if(r.ok) LS.set('gp_sched_sig',DAY+sig);
+    }catch(e){}
+  },3000);
 }
 function list(){ return MODE==='quote'?QUOTES:SINGLES; }
 function render(){
