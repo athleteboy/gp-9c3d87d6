@@ -168,7 +168,7 @@ async function loadDay(){
     else if(!mv && DAY===today() && dd===yday && !done[x.id]) LEFT.push({...x,time:'',_left:dd});   // 前日の残り＝下に畳んで出す（自動では足さない）
   }
   // 引用は単独と同じカードで出す（time＝回の時刻・segs＝引用文・quote＝元）
-  QUOTES = q ? JSON.parse(new TextDecoder().decode(await getBin(q.f))).map(x=>({id:x.id,k:(x.kind==='buzz'?'🟨バズ':'🟦リスト')+'　'+(x.label||x.acc),time:x.slot,segs:[x.text],imgs:x.imgs,quote:x})).filter(x=>MOVE[x.id]!=='drop') : [];
+  QUOTES = q ? JSON.parse(new TextDecoder().decode(await getBin(q.f))).map(x=>({id:x.id,k:(x.code?x.code+'　':'')+(x.kind==='buzz'?'🟨バズ':'🟦リスト')+'　'+(x.label||x.acc),time:x.slot,segs:[x.text],imgs:x.imgs,quote:x})).filter(x=>MOVE[x.id]!=='drop') : [];
   render();
   // 画像は先に全部ほどいておく＝「Xで開く」を押した瞬間に渡せる（押した後に待つと iPhone が共有を止める）
   for(const p of SINGLES.concat(QUOTES)) for(const im of p.imgs.concat(p.quote&&p.quote.src_imgs||[])) loadImg(im);
