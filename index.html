@@ -141,7 +141,7 @@ function login(err){
 async function start(pass){
   IDX=await loadIndex();
   KEY=await derive(pass,IDX.salt,IDX.iter);
-  const t=today(); const ds=Object.keys(IDX.days).sort();
+  const t=today(); const ds=Object.keys(IDX.days).sort().filter(d=>d>=t);
   DAY = LS.get('gp_day',null); if(!ds.includes(DAY)) DAY = ds.includes(t)?t:ds[0];
   await loadDay();
   LS.set('gp_pass',pass);
@@ -233,7 +233,7 @@ function sendSched(eff){
 function list(){ return MODE==='quote'?QUOTES:SINGLES; }
 function render(){
   const app=document.getElementById('app'); app.textContent='';
-  const ds=Object.keys(IDX.days).sort();
+  const ds=Object.keys(IDX.days).sort().filter(d=>d>=today());   // 昨日のタブは出さない（本人「出ちゃうと分かりづらい」）。昨日の分は今日の下の「昨日の残り」だけ
   const eff = MODE==='quote' ? (p=>p.time) : sched();
   const L=list().slice().sort((a,b)=>toM(eff(a))-toM(eff(b)));
   // 本人「ジャンルも書いて欲しい　SNS 1/2 とか」「引用は元投稿のアカウント名も」
