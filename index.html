@@ -147,15 +147,25 @@ async function start(pass){
   LS.set('gp_pass',pass);
   if(IDX.cfg){ try{ CFG=JSON.parse(new TextDecoder().decode(await getBin(IDX.cfg))); sendMarks(); }catch(e){} }
 }
-let MODE=LS.get('gp_mode','single'), SINGLES=[], QUOTES=[];
+let LEFT=[], leftOpen=false, MODE=LS.get('gp_mode','single'), SINGLES=[], QUOTES=[], MOVE=LS.get('gp_move',{});
 const QS=new URLSearchParams(location.search);
 if(QS.get('tab')){ MODE=QS.get('tab'); LS.set('gp_mode',MODE); if(QS.get('id')) open[QS.get('id')]=true; }
 navigator.serviceWorker&&navigator.serviceWorker.addEventListener('message',e=>{ const o=e.data&&e.data.open; if(!o) return; MODE=o.tab||MODE; LS.set('gp_mode',MODE); if(o.id) open[o.id]=true; if(IDX) loadIndex().then(n=>{IDX=n;return loadDay();}); });
 async function loadDay(){
   const d=IDX.days[DAY], q=(IDX.quotes||{})[DAY];
-  SINGLES = d ? JSON.parse(new TextDecoder().decode(await getBin(d.f))) : [];
+  // 本人「今日投稿できなかったものを明日に回したい」：全部の日を読み、回した物・前日の残りを足す（MOVE＝id→回した日 or 'drop'）
+  const ALL={};
+  for(const [dd,v] of Object.entries(IDX.days)){ try{ ALL[dd]=JSON.parse(new TextDecoder().decode(await getBin(v.f))).map(x=>({...x,_from:dd})); }catch(e){ ALL[dd]=[]; } }
+  const yday=Object.keys(ALL).filter(x=>x<DAY).sort().pop();
+  SINGLES=[]; LEFT=[];
+  for(const [dd,ps] of Object.entries(ALL)) for(const x of ps){
+    const mv=MOVE[x.id];
+    if(mv==='drop') continue;
+    if(mv ? mv===DAY : dd===DAY) SINGLES.push(mv&&dd!==DAY?{...x,time:'',_moved:dd}:x);
+    else if(!mv && DAY===today() && dd===yday && !done[x.id]) LEFT.push({...x,time:'',_left:dd});   // 前日の残り＝下に畳んで出す（自動では足さない）
+  }
   // 引用は単独と同じカードで出す（time＝回の時刻・segs＝引用文・quote＝元）
-  QUOTES = q ? JSON.parse(new TextDecoder().decode(await getBin(q.f))).map(x=>({id:x.id,k:(x.kind==='buzz'?'🟨バズ':'🟦リスト')+'　'+(x.label||x.acc),time:x.slot,segs:[x.text],imgs:x.imgs,quote:x})) : [];
+  QUOTES = q ? JSON.parse(new TextDecoder().decode(await getBin(q.f))).map(x=>({id:x.id,k:(x.kind==='buzz'?'🟨バズ':'🟦リスト')+'　'+(x.label||x.acc),time:x.slot,segs:[x.text],imgs:x.imgs,quote:x})).filter(x=>MOVE[x.id]!=='drop') : [];
   render();
   // 画像は先に全部ほどいておく＝「Xで開く」を押した瞬間に渡せる（押した後に待つと iPhone が共有を止める）
   for(const p of SINGLES.concat(QUOTES)) for(const im of p.imgs.concat(p.quote&&p.quote.src_imgs||[])) loadImg(im);
@@ -177,6 +187,9 @@ const nowM=()=>{const d=new Date();return d.getHours()*60+d.getMinutes()};
 function sched(){
   const key='gp_sched_'+DAY, S=LS.get(key,{});
   const eff=p=>S[p.id]||p.time;
+  // 回してきた本（時刻なし）は、その日の最後の本の後ろに45〜100分あけて置く
+  const noT=SINGLES.filter(p=>!eff(p)&&!done[p.id]);
+  if(noT.length){ let t=Math.max(DAY===today()?nowM():7*60+30, ...SINGLES.filter(p=>eff(p)).map(p=>toM(eff(p))))+45; noT.forEach(p=>{ while(t%5===0) t++; S[p.id]=toT(t); t+=45+Math.floor(Math.random()*56); }); LS.set(key,S); }
   if(DAY===today()){
     const rest=SINGLES.filter(p=>!done[p.id]).sort((a,b)=>toM(eff(a))-toM(eff(b)));
     if(rest.length && nowM()>toM(eff(rest[0]))+20){
@@ -225,6 +238,10 @@ function render(){
   const nx=rest[0]&&rest[0].id;
   rest.forEach(p=>app.appendChild(card(p,p.id===nx,eff(p))));
   if(fin.length){ app.appendChild($('div',{class:'sec',text:'投稿した（'+fin.length+'）'})); fin.forEach(p=>app.appendChild(card(p,false,eff(p)))); }
+  if(MODE==='single' && LEFT.length){
+    app.appendChild($('button',{class:'btn sub',text:(leftOpen?'▼ ':'▶ ')+'昨日の残り（出していない '+LEFT.length+'本）',onclick:()=>{leftOpen=!leftOpen;render();}}));
+    if(leftOpen) LEFT.forEach(p=>app.appendChild(card(p,false,'')));
+  }
   app.appendChild($('div',{class:'foot',text:'更新 '+IDX.built}));
   app.appendChild(notifBox());
 }
@@ -356,11 +373,17 @@ function card(p,isNext,tm){
     body.appendChild(seg);
     if(i===0){ if(p.quote) body.append($('div',{class:'sec2',text:'▼ 画像'}), p.imgs.length?myImgs():$('div',{class:'tag',text:'画像なし'}), p.imgs.length?imgChips():''); body.append(main,subs); }
   });
+  // 明日に回す／今回は出さない（出していない本だけ）
+  const tmr=(()=>{ const d=new Date(DAY+'T00:00:00'); d.setDate(d.getDate()+1); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); })();
+  const moveRow=isDone?null:$('div',{class:'btns'},[
+    p.quote?null:p._left?$('button',{class:'btn sub',text:'今日に回す',onclick:async()=>{ MOVE[p.id]=DAY; LS.set('gp_move',MOVE); await loadDay(); }}):$('button',{class:'btn sub',text:'明日に回す',onclick:async()=>{ MOVE[p.id]=tmr; LS.set('gp_move',MOVE); await loadDay(); }}),
+    $('button',{class:'btn sub',text:'今回は出さない',onclick:async()=>{ MOVE[p.id]='drop'; LS.set('gp_move',MOVE); await loadDay(); }})]);
+  if(p._moved||p._left) body.insertBefore($('div',{class:'when',text:md(p._moved||p._left)+(p._left?' に出していない本':' から回してきた本')}),body.firstChild);
   const mark=$('button',{class:'btn '+(isDone?'undo':'done'),text:isDone?'投稿したを取り消す':'投稿した',onclick:()=>{
     if(isDone) delete done[p.id]; else { const d=new Date(); done[p.id]=String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0'); open[p.id]=false; }
     LS.set('gp_done',done); render(); if(!isDone){ const nx=document.querySelector('.card.next'); if(nx) nx.scrollIntoView({behavior:'smooth',block:'start'}); }
   }});
-  body.append($('div',{class:'btns'},[mark]),msg);
+  body.append($('div',{class:'btns'},[mark]),moveRow||'',msg);
   c.appendChild(body);
   return c;
 }
