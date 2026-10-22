@@ -49,8 +49,11 @@ html,body{margin:0;background:var(--ground);color:var(--ink);font-family:var(--s
 .tag{font-size:12px;color:var(--muted);white-space:nowrap}
 .chk{font-size:13px;color:var(--ok);font-weight:700;white-space:nowrap}
 .cb{padding:0 14px 14px;display:flex;flex-direction:column;gap:12px}
-.thumbs{display:flex;gap:6px}
-.thumbs img{width:72px;aspect-ratio:3/4;object-fit:cover;border-radius:8px;border:1px solid var(--line);background:var(--line)}
+.thumbs{display:grid;grid-template-columns:1fr;gap:6px}
+.thumbs.n2{grid-template-columns:1fr 1fr}
+.thumbs img{width:100%;aspect-ratio:3/4;object-fit:cover;border-radius:10px;border:1px solid var(--line);background:var(--line)}
+.big{position:fixed;inset:0;z-index:9;background:rgba(0,0,0,.92);display:flex;align-items:center;justify-content:center;padding:env(safe-area-inset-top,0px) 8px env(safe-area-inset-bottom,0px)}
+.big img{max-width:100%;max-height:100%;object-fit:contain}
 .seg{border-left:3px solid var(--accent);padding-left:10px;display:flex;flex-direction:column;gap:6px}
 .seg .sl{font-size:12px;font-weight:700;color:var(--muted)}
 .txt{white-space:pre-wrap;overflow-wrap:anywhere;font-size:15px}
@@ -163,7 +166,8 @@ function card(p,isNext){
   if(!isOpen) return c;
   const body=$('div',{class:'cb'});
   if(p.k) body.appendChild($('div',{class:'tag',text:p.k}));
-  if(p.imgs.length) body.appendChild($('div',{class:'thumbs'},p.imgs.map(im=>$('img',{id:'th-'+im.f,alt:'',src:FILES[im.f]?URL.createObjectURL(FILES[im.f]):''}))));
+  // 本人「画像ちっちゃい」：1枚は横幅いっぱい・2枚以上は2列。押すと全画面
+  if(p.imgs.length) body.appendChild($('div',{class:'thumbs'+(p.imgs.length>1?' n2':'')},p.imgs.map(im=>$('img',{id:'th-'+im.f,alt:'',src:FILES[im.f]?URL.createObjectURL(FILES[im.f]):'',onclick:e=>{ const o=$('div',{class:'big',onclick:()=>o.remove()},[$('img',{src:e.target.src,alt:''})]); document.body.appendChild(o); }}))));
   const msg=$('div',{class:'msg'});
   const files=()=>p.imgs.map(im=>FILES[im.f]).filter(Boolean);
   // ツリーは「1段目 → Xで開く → 2段目以降をコピー」の順（出す順に上から押すだけ）
