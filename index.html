@@ -68,8 +68,11 @@ html,body{margin:0;background:var(--ground);color:var(--ink);font-family:var(--s
 .btn.done{background:var(--ok);border-color:var(--ok);color:#fff}
 .btn.undo{background:transparent;color:var(--ok);border-color:var(--ok)}
 .msg{font-size:13px;color:var(--ok);min-height:1em}
-.ln.mk{background:color-mix(in srgb,#f0b400 35%,transparent);border-radius:4px}
-.ln.mk::after{content:" 弱い";font-size:11px;font-weight:700;color:var(--warn)}
+.ln.mk{border-radius:4px}
+.ln.k0{background:color-mix(in srgb,#f0b400 35%,transparent)}
+.ln.k1{background:color-mix(in srgb,#e5484d 35%,transparent)}
+.ln.k2{background:color-mix(in srgb,#3e8ef7 35%,transparent)}
+.ln.mk::after{content:" " attr(data-k);font-size:11px;font-weight:700;color:var(--warn)}
 .hint{font-size:12px;color:var(--muted)}
 .when{font-size:15px;font-weight:700;color:var(--accent)}
 .qsrc{border:1px solid var(--line);border-radius:10px;padding:10px 12px;display:flex;flex-direction:column;gap:6px;background:var(--ground)}
@@ -217,13 +220,21 @@ function render(){
 }
 // 印：スマホに控え、置き場のメモ欄（GitHub の Issue）に鍵をかけて送る。PC の learn_loop.py が毎朝読む
 let MARKS=LS.get('gp_marks',{}), CFG=null, sendT=null;
-const isMarked=(id,ln)=>!!(MARKS[id]&&MARKS[id].lines.includes(ln));
-function toggleMark(id,ln){ const m=MARKS[id]||(MARKS[id]={lines:[],sent:false}); const i=m.lines.indexOf(ln); if(i<0) m.lines.push(ln); else m.lines.splice(i,1); m.sent=false; LS.set('gp_marks',MARKS); clearTimeout(sendT); sendT=setTimeout(sendMarks,4000); }
+// 本人「弱いっていうのと、文章あってないとか、AI感とかっていろいろある」＝同じ行をタップするたびに 弱い→AI感→合ってない→外す
+const KINDS=['弱い','AI感','合ってない'];
+function markOf(id,ln){ const m=MARKS[id]; if(!m) return ''; if(m.kinds&&m.kinds[ln]) return m.kinds[ln]; return m.lines.includes(ln)?'弱い':''; }
+const isMarked=(id,ln)=>!!markOf(id,ln);
+function toggleMark(id,ln){
+  const m=MARKS[id]||(MARKS[id]={lines:[],kinds:{},sent:false}); m.kinds=m.kinds||{};
+  const cur=markOf(id,ln), nx=KINDS[KINDS.indexOf(cur)+1]||'';
+  if(nx){ m.kinds[ln]=nx; if(!m.lines.includes(ln)) m.lines.push(ln); } else { delete m.kinds[ln]; m.lines=m.lines.filter(x=>x!==ln); }
+  m.sent=false; LS.set('gp_marks',MARKS); clearTimeout(sendT); sendT=setTimeout(sendMarks,4000); return nx;
+}
 async function sendMarks(){
-  if(!CFG||!KEY) return; const todo=Object.entries(MARKS).filter(([,m])=>!m.sent); if(!todo.length) return;
+  if(!CFG||!KEY||location.hostname==='127.0.0.1') return; const todo=Object.entries(MARKS).filter(([,m])=>!m.sent); if(!todo.length) return;
   try{
     const iv=crypto.getRandomValues(new Uint8Array(12));
-    const ct=new Uint8Array(await crypto.subtle.encrypt({name:'AES-GCM',iv},KEY,new TextEncoder().encode(JSON.stringify({at:new Date().toISOString(),marks:Object.fromEntries(todo.map(([id,m])=>[id,m.lines]))}))));
+    const ct=new Uint8Array(await crypto.subtle.encrypt({name:'AES-GCM',iv},KEY,new TextEncoder().encode(JSON.stringify({at:new Date().toISOString(),marks:Object.fromEntries(todo.map(([id,m])=>[id,m.lines])),kinds:Object.fromEntries(todo.map(([id,m])=>[id,m.kinds||{}]))}))));
     const all=new Uint8Array(12+ct.length); all.set(iv); all.set(ct,12);
     let bin=''; all.forEach(b=>bin+=String.fromCharCode(b));
     const r=await fetch('https://api.github.com/repos/'+CFG.repo+'/issues/'+CFG.issue+'/comments',{method:'POST',headers:{'Authorization':'Bearer '+CFG.token,'Accept':'application/vnd.github+json'},body:JSON.stringify({body:'gpm1:'+btoa(bin)})});
@@ -307,8 +318,8 @@ function card(p,isNext,tm){
     if(p.segs.length>1) seg.appendChild($('div',{class:'sl',text:(i+1)+'段目'+(i===0?'（最初の投稿）':'（自分の投稿に返信で）')}));
     // 本人「印いいよ　アプリのほうがわかりやすい」：直したいけど『まぁいいか』で出す行は、タップで印（直さなくていい）
     const tx=$('div',{class:'txt'+(s.length>140?' fold':'')}); seg.appendChild(tx);
-    s.split('\n').forEach((ln,j,arr)=>{ const sp=$('span',{class:'ln'+(isMarked(p.id,ln)?' mk':''),text:ln}); if(ln.trim()) sp.addEventListener('click',e=>{ e.stopPropagation(); toggleMark(p.id,ln); sp.classList.toggle('mk'); }); tx.appendChild(sp); if(j<arr.length-1) tx.appendChild(document.createTextNode('\n')); });
-    if(i===0) seg.appendChild($('div',{class:'hint',text:'弱いと思った行はタップで印（直さなくていい・あとで学ぶ材料に）'}));
+    s.split('\n').forEach((ln,j,arr)=>{ const k0=markOf(p.id,ln); const sp=$('span',{class:'ln'+(k0?' mk k'+KINDS.indexOf(k0):''),'data-k':k0,text:ln}); if(ln.trim()) sp.addEventListener('click',e=>{ e.stopPropagation(); const k=toggleMark(p.id,ln); sp.className='ln'+(k?' mk k'+KINDS.indexOf(k):''); sp.dataset.k=k; }); tx.appendChild(sp); if(j<arr.length-1) tx.appendChild(document.createTextNode('\n')); });
+    if(i===0) seg.appendChild($('div',{class:'hint',text:'気になる行はタップで印（直さなくていい）：1回 弱い／2回 AI感／3回 合ってない／4回 外す'}));
     if(s.length>140) seg.appendChild($('button',{class:'more',text:'全文を見る',onclick:e=>{tx.classList.toggle('fold');e.target.textContent=tx.classList.contains('fold')?'全文を見る':'たたむ';}}));
     if(i>0) seg.appendChild($('div',{class:'btns'},[$('button',{class:'btn sub',text:(i+1)+'段目をコピー',onclick:()=>copy(s,msg,(i+1)+'段目')})]));
     body.appendChild(seg);
