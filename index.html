@@ -68,6 +68,9 @@ html,body{margin:0;background:var(--ground);color:var(--ink);font-family:var(--s
 .btn.done{background:var(--ok);border-color:var(--ok);color:#fff}
 .btn.undo{background:transparent;color:var(--ok);border-color:var(--ok)}
 .msg{font-size:13px;color:var(--ok);min-height:1em}
+.ln.mk{background:color-mix(in srgb,#f0b400 35%,transparent);border-radius:4px}
+.ln.mk::after{content:" 弱い";font-size:11px;font-weight:700;color:var(--warn)}
+.hint{font-size:12px;color:var(--muted)}
 .when{font-size:15px;font-weight:700;color:var(--accent)}
 .qsrc{border:1px solid var(--line);border-radius:10px;padding:10px 12px;display:flex;flex-direction:column;gap:6px;background:var(--ground)}
 .qsrc .txt.fold::after{background:linear-gradient(transparent,var(--ground))}
@@ -99,7 +102,7 @@ let done=LS.get('gp_done',{});   // id -> 投稿した時刻
 
 async function derive(pass,salt,iter){
   const base=await crypto.subtle.importKey('raw',new TextEncoder().encode(pass),'PBKDF2',false,['deriveKey']);
-  return crypto.subtle.deriveKey({name:'PBKDF2',salt:b64(salt),iterations:iter,hash:'SHA-256'},base,{name:'AES-GCM',length:256},false,['decrypt']);
+  return crypto.subtle.deriveKey({name:'PBKDF2',salt:b64(salt),iterations:iter,hash:'SHA-256'},base,{name:'AES-GCM',length:256},false,['decrypt','encrypt']);
 }
 async function getBin(f){
   const r=await fetch('data/'+f); if(!r.ok) throw new Error('取れない '+f);
@@ -129,6 +132,7 @@ async function start(pass){
   DAY = LS.get('gp_day',null); if(!ds.includes(DAY)) DAY = ds.includes(t)?t:ds[0];
   await loadDay();
   LS.set('gp_pass',pass);
+  if(IDX.cfg){ try{ CFG=JSON.parse(new TextDecoder().decode(await getBin(IDX.cfg))); sendMarks(); }catch(e){} }
 }
 let MODE=LS.get('gp_mode','single'), SINGLES=[], QUOTES=[];
 const QS=new URLSearchParams(location.search);
@@ -211,6 +215,21 @@ function render(){
   app.appendChild($('div',{class:'foot',text:'更新 '+IDX.built}));
   app.appendChild(notifBox());
 }
+// 印：スマホに控え、置き場のメモ欄（GitHub の Issue）に鍵をかけて送る。PC の learn_loop.py が毎朝読む
+let MARKS=LS.get('gp_marks',{}), CFG=null, sendT=null;
+const isMarked=(id,ln)=>!!(MARKS[id]&&MARKS[id].lines.includes(ln));
+function toggleMark(id,ln){ const m=MARKS[id]||(MARKS[id]={lines:[],sent:false}); const i=m.lines.indexOf(ln); if(i<0) m.lines.push(ln); else m.lines.splice(i,1); m.sent=false; LS.set('gp_marks',MARKS); clearTimeout(sendT); sendT=setTimeout(sendMarks,4000); }
+async function sendMarks(){
+  if(!CFG||!KEY) return; const todo=Object.entries(MARKS).filter(([,m])=>!m.sent); if(!todo.length) return;
+  try{
+    const iv=crypto.getRandomValues(new Uint8Array(12));
+    const ct=new Uint8Array(await crypto.subtle.encrypt({name:'AES-GCM',iv},KEY,new TextEncoder().encode(JSON.stringify({at:new Date().toISOString(),marks:Object.fromEntries(todo.map(([id,m])=>[id,m.lines]))}))));
+    const all=new Uint8Array(12+ct.length); all.set(iv); all.set(ct,12);
+    let bin=''; all.forEach(b=>bin+=String.fromCharCode(b));
+    const r=await fetch('https://api.github.com/repos/'+CFG.repo+'/issues/'+CFG.issue+'/comments',{method:'POST',headers:{'Authorization':'Bearer '+CFG.token,'Accept':'application/vnd.github+json'},body:JSON.stringify({body:'gpm1:'+btoa(bin)})});
+    if(r.ok){ todo.forEach(([,m])=>m.sent=true); LS.set('gp_marks',MARKS); }
+  }catch(e){}
+}
 const VAPID='BG3ovvXhHy_tRwN6PgOeR9K2sTNx6JH89wtin5Rii79QZoXRSnNOQjm8smQNkgb4gqk-bXQvaxnOQGXm03OoXHM';
 function notifBox(){
   const box=$('div',{class:'foot'});
@@ -286,7 +305,10 @@ function card(p,isNext,tm){
   p.segs.forEach((s,i)=>{
     const seg=$('div',{class:'seg'});
     if(p.segs.length>1) seg.appendChild($('div',{class:'sl',text:(i+1)+'段目'+(i===0?'（最初の投稿）':'（自分の投稿に返信で）')}));
-    const tx=$('div',{class:'txt'+(s.length>140?' fold':''),text:s}); seg.appendChild(tx);
+    // 本人「印いいよ　アプリのほうがわかりやすい」：直したいけど『まぁいいか』で出す行は、タップで印（直さなくていい）
+    const tx=$('div',{class:'txt'+(s.length>140?' fold':'')}); seg.appendChild(tx);
+    s.split('\n').forEach((ln,j,arr)=>{ const sp=$('span',{class:'ln'+(isMarked(p.id,ln)?' mk':''),text:ln}); if(ln.trim()) sp.addEventListener('click',e=>{ e.stopPropagation(); toggleMark(p.id,ln); sp.classList.toggle('mk'); }); tx.appendChild(sp); if(j<arr.length-1) tx.appendChild(document.createTextNode('\n')); });
+    if(i===0) seg.appendChild($('div',{class:'hint',text:'弱いと思った行はタップで印（直さなくていい・あとで学ぶ材料に）'}));
     if(s.length>140) seg.appendChild($('button',{class:'more',text:'全文を見る',onclick:e=>{tx.classList.toggle('fold');e.target.textContent=tx.classList.contains('fold')?'全文を見る':'たたむ';}}));
     if(i>0) seg.appendChild($('div',{class:'btns'},[$('button',{class:'btn sub',text:(i+1)+'段目をコピー',onclick:()=>copy(s,msg,(i+1)+'段目')})]));
     body.appendChild(seg);
