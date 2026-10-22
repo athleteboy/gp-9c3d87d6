@@ -74,6 +74,14 @@ html,body{margin:0;background:var(--ground);color:var(--ink);font-family:var(--s
 .ln.k2{background:color-mix(in srgb,#3e8ef7 35%,transparent)}
 .ln.mk::after{content:" " attr(data-k);font-size:11px;font-weight:700;color:var(--warn)}
 .hint{font-size:12px;color:var(--muted)}
+.chips{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+.chip{border:1px solid var(--line);background:transparent;color:var(--ink);border-radius:999px;padding:5px 12px;font:inherit;font-size:13px}
+.chip.on{background:var(--warn);border-color:var(--warn);color:#fff}
+.sheet{position:fixed;inset:0;z-index:10;background:rgba(0,0,0,.5);display:flex;align-items:flex-end}
+.sheetin{background:var(--surface);width:100%;border-radius:16px 16px 0 0;padding:16px 16px calc(16px + env(safe-area-inset-bottom,0px));display:flex;flex-direction:column;gap:8px}
+.sheetln{font-size:14px;color:var(--muted);white-space:pre-wrap;padding-bottom:4px}
+.btn.on{outline:3px solid var(--accent)}
+.ln.k3{background:color-mix(in srgb,#8b8d98 40%,transparent);text-decoration:line-through}
 .when{font-size:15px;font-weight:700;color:var(--accent)}
 .qsrc{border:1px solid var(--line);border-radius:10px;padding:10px 12px;display:flex;flex-direction:column;gap:6px;background:var(--ground)}
 .qsrc .txt.fold::after{background:linear-gradient(transparent,var(--ground))}
@@ -220,21 +228,27 @@ function render(){
 }
 // 印：スマホに控え、置き場のメモ欄（GitHub の Issue）に鍵をかけて送る。PC の learn_loop.py が毎朝読む
 let MARKS=LS.get('gp_marks',{}), CFG=null, sendT=null;
-// 本人「弱いっていうのと、文章あってないとか、AI感とかっていろいろある」＝同じ行をタップするたびに 弱い→AI感→合ってない→外す
-const KINDS=['弱い','AI感','合ってない'];
-function markOf(id,ln){ const m=MARKS[id]; if(!m) return ''; if(m.kinds&&m.kinds[ln]) return m.kinds[ln]; return m.lines.includes(ln)?'弱い':''; }
+// 本人「行をタップ　そしたら何個か選べるやつ出てきたらいい」：弱い／AI感／合ってない／いらない／外す
+const KINDS=['弱い','AI感','合ってない','いらない'];
+function M(id){ const m=MARKS[id]||(MARKS[id]={lines:[],kinds:{},post:[],img:[],sent:false}); m.kinds=m.kinds||{}; m.post=m.post||[]; m.img=m.img||[]; return m; }
+function markOf(id,ln){ const m=MARKS[id]; if(!m) return ''; if(m.kinds&&m.kinds[ln]) return m.kinds[ln]; return (m.lines||[]).includes(ln)?'弱い':''; }
 const isMarked=(id,ln)=>!!markOf(id,ln);
-function toggleMark(id,ln){
-  const m=MARKS[id]||(MARKS[id]={lines:[],kinds:{},sent:false}); m.kinds=m.kinds||{};
-  const cur=markOf(id,ln), nx=KINDS[KINDS.indexOf(cur)+1]||'';
-  if(nx){ m.kinds[ln]=nx; if(!m.lines.includes(ln)) m.lines.push(ln); } else { delete m.kinds[ln]; m.lines=m.lines.filter(x=>x!==ln); }
-  m.sent=false; LS.set('gp_marks',MARKS); clearTimeout(sendT); sendT=setTimeout(sendMarks,4000); return nx;
+function dirty(m){ m.sent=false; LS.set('gp_marks',MARKS); clearTimeout(sendT); sendT=setTimeout(sendMarks,4000); }
+function setMark(id,ln,k){ const m=M(id); if(k){ m.kinds[ln]=k; if(!m.lines.includes(ln)) m.lines.push(ln); } else { delete m.kinds[ln]; m.lines=m.lines.filter(x=>x!==ln); } dirty(m); }
+function toggleList(id,key,v){ const m=M(id); m[key]=m[key].includes(v)?m[key].filter(x=>x!==v):m[key].concat(v); dirty(m); return m[key].includes(v); }
+function pickMark(id,ln,sp){
+  const cur=markOf(id,ln);
+  const o=$('div',{class:'sheet',onclick:e=>{ if(e.target===o) o.remove(); }},[$('div',{class:'sheetin'},[
+    $('div',{class:'sheetln',text:ln}),
+    ...KINDS.map((k,i)=>$('button',{class:'btn sub k'+i+(cur===k?' on':''),text:k,onclick:()=>{ setMark(id,ln,k); sp.className='ln mk k'+i; sp.dataset.k=k; o.remove(); }})),
+    $('button',{class:'btn sub',text:cur?'印を外す':'閉じる',onclick:()=>{ if(cur){ setMark(id,ln,''); sp.className='ln'; sp.dataset.k=''; } o.remove(); }})])]);
+  document.body.appendChild(o);
 }
 async function sendMarks(){
   if(!CFG||!KEY||location.hostname==='127.0.0.1') return; const todo=Object.entries(MARKS).filter(([,m])=>!m.sent); if(!todo.length) return;
   try{
     const iv=crypto.getRandomValues(new Uint8Array(12));
-    const ct=new Uint8Array(await crypto.subtle.encrypt({name:'AES-GCM',iv},KEY,new TextEncoder().encode(JSON.stringify({at:new Date().toISOString(),marks:Object.fromEntries(todo.map(([id,m])=>[id,m.lines])),kinds:Object.fromEntries(todo.map(([id,m])=>[id,m.kinds||{}]))}))));
+    const ct=new Uint8Array(await crypto.subtle.encrypt({name:'AES-GCM',iv},KEY,new TextEncoder().encode(JSON.stringify({at:new Date().toISOString(),marks:Object.fromEntries(todo.map(([id,m])=>[id,m.lines])),kinds:Object.fromEntries(todo.map(([id,m])=>[id,m.kinds||{}])),post:Object.fromEntries(todo.map(([id,m])=>[id,m.post||[]])),img:Object.fromEntries(todo.map(([id,m])=>[id,m.img||[]]))}))));
     const all=new Uint8Array(12+ct.length); all.set(iv); all.set(ct,12);
     let bin=''; all.forEach(b=>bin+=String.fromCharCode(b));
     const r=await fetch('https://api.github.com/repos/'+CFG.repo+'/issues/'+CFG.issue+'/comments',{method:'POST',headers:{'Authorization':'Bearer '+CFG.token,'Accept':'application/vnd.github+json'},body:JSON.stringify({body:'gpm1:'+btoa(bin)})});
@@ -282,6 +296,10 @@ function card(p,isNext,tm){
   if(!isOpen) return c;
   const body=$('div',{class:'cb'});
   if(p.k) body.appendChild($('div',{class:'tag',text:p.k}));
+  // 本人「そもそもネタが弱いときはどうする？」＝投稿まるごとの印
+  const chip=(key,v)=>{ const on=!!(MARKS[p.id]&&(MARKS[p.id][key]||[]).includes(v)); return $('button',{class:'chip'+(on?' on':''),text:v,onclick:e=>{ e.target.classList.toggle('on',toggleList(p.id,key,v)); }}); };
+  if(!p.quote) body.appendChild($('div',{class:'chips'},[$('span',{class:'hint',text:'この投稿：'}),chip('post','ネタが弱い'),chip('post','いい')]));
+  else body.appendChild($('div',{class:'chips'},[$('span',{class:'hint',text:'この引用：'}),chip('post','角度が弱い'),chip('post','いい')]));
   // 次の1本は「あと◯分」を出す（今日だけ）。23:30 を過ぎる本は明日に回してもいい
   if(isNext && DAY===today() && tm && !p.quote){ const d=toM(tm)-nowM(); body.appendChild($('div',{class:'when',text:d>0?'あと'+(d>=60?Math.floor(d/60)+'時間':'')+(d%60)+'分（'+tm+'）':'今出す'})); }
   if(!p.quote && toM(tm)>23*60+30 && toM(tm)<99*60) body.appendChild($('div',{class:'msg err',text:toM(tm)>=1440?'今日のうちに入りません。明日に回すか、すぐ出してください':'23:30 を過ぎます。明日に回してもいいです'}));
@@ -302,7 +320,8 @@ function card(p,isNext,tm){
   }
   // 本人「画像ちっちゃい」：1枚は横幅いっぱい・2枚以上は2列。押すと全画面
   const myImgs=()=>$('div',{class:'thumbs'+(p.imgs.length>1?' n2':'')},p.imgs.map(im=>thumb(im)));
-  if(p.imgs.length && !p.quote) body.appendChild(myImgs());
+  const imgChips=()=>$('div',{class:'chips'},[$('span',{class:'hint',text:'画像：'}),chip('img','止まらない'),chip('img','伝わらない')]);
+  if(p.imgs.length && !p.quote){ body.appendChild(myImgs()); body.appendChild(imgChips()); }
   const msg=$('div',{class:'msg'});
   const files=()=>p.imgs.map(im=>FILES[im.f]).filter(Boolean);
   // ツリーは「1段目 → Xで開く → 2段目以降をコピー」の順（出す順に上から押すだけ）
@@ -318,12 +337,12 @@ function card(p,isNext,tm){
     if(p.segs.length>1) seg.appendChild($('div',{class:'sl',text:(i+1)+'段目'+(i===0?'（最初の投稿）':'（自分の投稿に返信で）')}));
     // 本人「印いいよ　アプリのほうがわかりやすい」：直したいけど『まぁいいか』で出す行は、タップで印（直さなくていい）
     const tx=$('div',{class:'txt'+(s.length>140?' fold':'')}); seg.appendChild(tx);
-    s.split('\n').forEach((ln,j,arr)=>{ const k0=markOf(p.id,ln); const sp=$('span',{class:'ln'+(k0?' mk k'+KINDS.indexOf(k0):''),'data-k':k0,text:ln}); if(ln.trim()) sp.addEventListener('click',e=>{ e.stopPropagation(); const k=toggleMark(p.id,ln); sp.className='ln'+(k?' mk k'+KINDS.indexOf(k):''); sp.dataset.k=k; }); tx.appendChild(sp); if(j<arr.length-1) tx.appendChild(document.createTextNode('\n')); });
-    if(i===0) seg.appendChild($('div',{class:'hint',text:'気になる行はタップで印（直さなくていい）：1回 弱い／2回 AI感／3回 合ってない／4回 外す'}));
+    s.split('\n').forEach((ln,j,arr)=>{ const k0=markOf(p.id,ln); const sp=$('span',{class:'ln'+(k0?' mk k'+KINDS.indexOf(k0):''),'data-k':k0,text:ln}); if(ln.trim()) sp.addEventListener('click',e=>{ e.stopPropagation(); pickMark(p.id,ln,sp); }); tx.appendChild(sp); if(j<arr.length-1) tx.appendChild(document.createTextNode('\n')); });
+    if(i===0) seg.appendChild($('div',{class:'hint',text:'気になる行はタップして種類を選ぶ（直さなくていい）'}));
     if(s.length>140) seg.appendChild($('button',{class:'more',text:'全文を見る',onclick:e=>{tx.classList.toggle('fold');e.target.textContent=tx.classList.contains('fold')?'全文を見る':'たたむ';}}));
     if(i>0) seg.appendChild($('div',{class:'btns'},[$('button',{class:'btn sub',text:(i+1)+'段目をコピー',onclick:()=>copy(s,msg,(i+1)+'段目')})]));
     body.appendChild(seg);
-    if(i===0){ if(p.quote) body.append($('div',{class:'sec2',text:'▼ 画像'}), p.imgs.length?myImgs():$('div',{class:'tag',text:'画像なし'})); body.append(main,subs); }
+    if(i===0){ if(p.quote) body.append($('div',{class:'sec2',text:'▼ 画像'}), p.imgs.length?myImgs():$('div',{class:'tag',text:'画像なし'}), p.imgs.length?imgChips():''); body.append(main,subs); }
   });
   const mark=$('button',{class:'btn '+(isDone?'undo':'done'),text:isDone?'投稿したを取り消す':'投稿した',onclick:()=>{
     if(isDone) delete done[p.id]; else { const d=new Date(); done[p.id]=String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0'); open[p.id]=false; }
