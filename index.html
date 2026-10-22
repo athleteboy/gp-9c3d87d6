@@ -1,0 +1,225 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>ジャイロ投稿</title>
+<meta name="theme-color" content="#15202b">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="投稿">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icon-180.png">
+<style>
+:root{
+  --ground:#f3f5f8; --surface:#fff; --ink:#15202b; --muted:#5b6876; --line:#dfe4ea;
+  --accent:#1d6fd8; --accent-ink:#fff; --ok:#1a8a55; --ok-bg:#e3f4ea; --warn:#b4540b;
+  --sans:-apple-system,"Hiragino Sans","Hiragino Kaku Gothic ProN",system-ui,sans-serif;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --ground:#0f141a; --surface:#18202a; --ink:#e8edf2; --muted:#9aa7b4; --line:#2a3542;
+    --accent:#4d93ec; --accent-ink:#0b1219; --ok:#5fd09a; --ok-bg:#153324; --warn:#f0a35c;
+  }
+}
+:root[data-theme="dark"]{
+  --ground:#0f141a; --surface:#18202a; --ink:#e8edf2; --muted:#9aa7b4; --line:#2a3542;
+  --accent:#4d93ec; --accent-ink:#0b1219; --ok:#5fd09a; --ok-bg:#153324; --warn:#f0a35c;
+}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--ground);color:var(--ink);font-family:var(--sans);font-size:16px;line-height:1.55;-webkit-text-size-adjust:100%}
+.wrap{max-width:560px;margin:0 auto;padding:calc(env(safe-area-inset-top,0px) + 8px) 16px calc(env(safe-area-inset-bottom,0px) + 40px);display:flex;flex-direction:column;gap:12px}
+.top{position:sticky;top:0;z-index:3;background:var(--ground);padding:calc(env(safe-area-inset-top,0px) + 8px) 0 8px;margin-top:calc(-8px - env(safe-area-inset-top,0px));display:flex;flex-direction:column;gap:8px;border-bottom:1px solid var(--line)}
+.bar{display:flex;align-items:center;gap:8px}
+.days{display:flex;gap:6px;flex:1;overflow-x:auto}
+.day{flex:0 0 auto;border:1px solid var(--line);background:var(--surface);color:var(--ink);border-radius:999px;padding:6px 14px;font:inherit;font-size:14px}
+.day.sel{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+.icon{border:1px solid var(--line);background:var(--surface);color:var(--ink);border-radius:999px;padding:6px 12px;font:inherit;font-size:14px}
+.prog{display:flex;align-items:center;gap:10px;font-size:14px;color:var(--muted)}
+.prog b{color:var(--ink);font-size:18px;font-variant-numeric:tabular-nums}
+.meter{flex:1;height:6px;background:var(--line);border-radius:3px;overflow:hidden}
+.meter i{display:block;height:100%;background:var(--ok)}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:14px;overflow:hidden}
+.card.next{border:2px solid var(--accent)}
+.card.done{opacity:.55}
+.ch{display:flex;gap:10px;align-items:center;padding:12px 14px;cursor:pointer;-webkit-tap-highlight-color:transparent}
+.tm{font-variant-numeric:tabular-nums;font-weight:700;font-size:17px;min-width:48px}
+.tm.none{color:var(--muted);font-weight:400;font-size:14px}
+.one{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:15px}
+.tag{font-size:12px;color:var(--muted);white-space:nowrap}
+.chk{font-size:13px;color:var(--ok);font-weight:700;white-space:nowrap}
+.cb{padding:0 14px 14px;display:flex;flex-direction:column;gap:12px}
+.thumbs{display:flex;gap:6px}
+.thumbs img{width:72px;aspect-ratio:3/4;object-fit:cover;border-radius:8px;border:1px solid var(--line);background:var(--line)}
+.seg{border-left:3px solid var(--accent);padding-left:10px;display:flex;flex-direction:column;gap:6px}
+.seg .sl{font-size:12px;font-weight:700;color:var(--muted)}
+.txt{white-space:pre-wrap;overflow-wrap:anywhere;font-size:15px}
+.txt.fold{max-height:5.2em;overflow:hidden;position:relative}
+.txt.fold::after{content:"";position:absolute;left:0;right:0;bottom:0;height:2em;background:linear-gradient(transparent,var(--surface))}
+.more{align-self:flex-start;border:0;background:none;color:var(--accent);font:inherit;font-size:14px;padding:0}
+.btns{display:flex;gap:8px;flex-wrap:wrap}
+.btn{flex:1 1 auto;border-radius:12px;padding:13px 14px;font:inherit;font-size:16px;font-weight:700;border:1px solid var(--accent);background:var(--accent);color:var(--accent-ink);min-height:48px}
+.btn.sub{background:transparent;color:var(--ink);border-color:var(--line);font-weight:500;font-size:15px}
+.btn.done{background:var(--ok);border-color:var(--ok);color:#fff}
+.btn.undo{background:transparent;color:var(--ok);border-color:var(--ok)}
+.msg{font-size:13px;color:var(--ok);min-height:1em}
+.msg.err{color:var(--warn)}
+.empty{text-align:center;color:var(--muted);padding:32px 12px;border:1px dashed var(--line);border-radius:14px;font-size:15px}
+.login{display:flex;flex-direction:column;gap:12px;padding-top:20vh}
+.login input{font:inherit;font-size:18px;padding:12px;border-radius:12px;border:1px solid var(--line);background:var(--surface);color:var(--ink)}
+.sec{font-size:13px;font-weight:700;color:var(--muted);margin-top:6px}
+.foot{font-size:12px;color:var(--muted);text-align:center}
+button:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+</style>
+</head>
+<body>
+<div class="wrap" id="app"></div>
+<script>
+const $ = (t,a={},k=[])=>{const e=document.createElement(t);for(const[n,v]of Object.entries(a)){if(n==='class')e.className=v;else if(n==='text')e.textContent=v;else if(n.startsWith('on'))e.addEventListener(n.slice(2),v);else e.setAttribute(n,v)}(Array.isArray(k)?k:[k]).forEach(c=>c&&e.appendChild(typeof c==='string'?document.createTextNode(c):c));return e};
+const LS={get(k,d){try{const v=localStorage.getItem(k);return v==null?d:JSON.parse(v)}catch(e){return d}},set(k,v){try{localStorage.setItem(k,JSON.stringify(v))}catch(e){}}};
+const WD='日月火水木金土';
+const md=d=>{const t=new Date(d+'T00:00:00');return (t.getMonth()+1)+'/'+t.getDate()+'('+WD[t.getDay()]+')'};
+const today=()=>new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Tokyo',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());
+const b64=s=>Uint8Array.from(atob(s),c=>c.charCodeAt(0));
+let KEY=null, IDX=null, POSTS=[], DAY=null, FILES={}, open={};
+let done=LS.get('gp_done',{});   // id -> 投稿した時刻
+
+async function derive(pass,salt,iter){
+  const base=await crypto.subtle.importKey('raw',new TextEncoder().encode(pass),'PBKDF2',false,['deriveKey']);
+  return crypto.subtle.deriveKey({name:'PBKDF2',salt:b64(salt),iterations:iter,hash:'SHA-256'},base,{name:'AES-GCM',length:256},false,['decrypt']);
+}
+async function getBin(f){
+  const r=await fetch('data/'+f); if(!r.ok) throw new Error('取れない '+f);
+  const u=new Uint8Array(await r.arrayBuffer());
+  return crypto.subtle.decrypt({name:'AES-GCM',iv:u.slice(0,12)},KEY,u.slice(12));
+}
+async function loadIndex(){
+  const r=await fetch('data/index.json?t='+Date.now(),{cache:'no-store'}).catch(()=>fetch('data/index.json'));
+  return r.json();
+}
+
+function login(err){
+  const app=document.getElementById('app'); app.textContent='';
+  const inp=$('input',{type:'password',placeholder:'合言葉',autocomplete:'current-password',id:'pass'});
+  const go=$('button',{class:'btn',text:'開く',onclick:async()=>{
+    go.disabled=true; msg.textContent='確かめています…';
+    try{ await start(inp.value.trim()); }catch(e){ go.disabled=false; msg.className='msg err'; msg.textContent='合言葉が違うか、つながりません'; }
+  }});
+  const msg=$('div',{class:'msg'+(err?' err':''),text:err||''});
+  app.append($('div',{class:'login'},[$('h1',{text:'ジャイロ投稿',style:'margin:0;font-size:22px'}),$('div',{text:'最初の1回だけ合言葉を入れてください',style:'color:var(--muted);font-size:14px'}),inp,go,msg]));
+}
+
+async function start(pass){
+  IDX=await loadIndex();
+  KEY=await derive(pass,IDX.salt,IDX.iter);
+  const t=today(); const ds=Object.keys(IDX.days).sort();
+  DAY = LS.get('gp_day',null); if(!ds.includes(DAY)) DAY = ds.includes(t)?t:ds[0];
+  await loadDay();
+  LS.set('gp_pass',pass);
+}
+async function loadDay(){
+  const d=IDX.days[DAY];
+  POSTS = d ? JSON.parse(new TextDecoder().decode(await getBin(d.f))) : [];
+  render();
+  // 画像は先に全部ほどいておく＝「Xで開く」を押した瞬間に渡せる（押した後に待つと iPhone が共有を止める）
+  for(const p of POSTS) for(const im of p.imgs){
+    if(FILES[im.f]) continue;
+    getBin(im.f).then(buf=>{ FILES[im.f]=new File([buf],im.name,{type:'image/jpeg'}); const t=document.getElementById('th-'+im.f); if(t) t.src=URL.createObjectURL(FILES[im.f]); }).catch(()=>{});
+  }
+}
+
+function nextId(){ const n=POSTS.find(p=>!done[p.id]); return n&&n.id; }
+function render(){
+  const app=document.getElementById('app'); app.textContent='';
+  const ds=Object.keys(IDX.days).sort();
+  const n=POSTS.length, k=POSTS.filter(p=>done[p.id]).length;
+  const top=$('div',{class:'top'},[
+    $('div',{class:'bar'},[
+      $('div',{class:'days'},ds.map(d=>$('button',{class:'day'+(d===DAY?' sel':''),text:(d===today()?'今日 ':'')+md(d)+' '+IDX.days[d].n+'本',onclick:async()=>{DAY=d;LS.set('gp_day',d);await loadDay();}}))),
+      $('button',{class:'icon',text:'更新',onclick:async e=>{e.target.textContent='…';try{IDX=await loadIndex();await loadDay();}catch(x){e.target.textContent='✕'}}})
+    ]),
+    $('div',{class:'prog'},[$('span',{},[$('b',{text:k+'/'+n}),' 本 済み']),$('div',{class:'meter'},[$('i',{style:'width:'+(n?k/n*100:0)+'%'})])])
+  ]);
+  app.appendChild(top);
+  if(!n){ app.appendChild($('div',{class:'empty',text:'この日の投稿はまだありません。予約表で「予約に入れる」を押した物がここに出ます'})); }
+  const nx=nextId();
+  const rest=POSTS.filter(p=>!done[p.id]), fin=POSTS.filter(p=>done[p.id]).sort((a,b)=>done[b.id]<done[a.id]?-1:1);
+  rest.forEach(p=>app.appendChild(card(p,p.id===nx)));
+  if(fin.length){ app.appendChild($('div',{class:'sec',text:'投稿した（'+fin.length+'）'})); fin.forEach(p=>app.appendChild(card(p,false))); }
+  app.appendChild($('div',{class:'foot',text:'更新 '+IDX.built}));
+}
+
+function card(p,isNext){
+  const isDone=!!done[p.id];
+  const isOpen = open[p.id]!=null ? open[p.id] : isNext;
+  const c=$('section',{class:'card'+(isNext?' next':'')+(isDone?' done':''),id:'c-'+p.id});
+  const first=(p.segs[0]||'').split('\n')[0];
+  const head=$('div',{class:'ch',onclick:()=>{open[p.id]=!isOpen;render();}},[
+    $('div',{class:'tm'+(p.time?'':' none'),text:p.time||'時刻なし'}),
+    $('div',{class:'one',text:first}),
+    isDone?$('span',{class:'chk',text:'✓ '+done[p.id]}):$('span',{class:'tag',text:(p.segs.length>1?'ツリー'+p.segs.length+'段・':'')+(p.imgs.length?'画像'+p.imgs.length:'文字だけ')})
+  ]);
+  c.appendChild(head);
+  if(!isOpen) return c;
+  const body=$('div',{class:'cb'});
+  if(p.k) body.appendChild($('div',{class:'tag',text:p.k}));
+  if(p.imgs.length) body.appendChild($('div',{class:'thumbs'},p.imgs.map(im=>$('img',{id:'th-'+im.f,alt:'',src:FILES[im.f]?URL.createObjectURL(FILES[im.f]):''}))));
+  const msg=$('div',{class:'msg'});
+  const files=()=>p.imgs.map(im=>FILES[im.f]).filter(Boolean);
+  // ツリーは「1段目 → Xで開く → 2段目以降をコピー」の順（出す順に上から押すだけ）
+  const main=$('div',{class:'btns'},[
+    $('button',{class:'btn',text:'Xで開く',onclick:()=>openX(p,files(),msg)}),
+  ]);
+  const subs=$('div',{class:'btns'},[
+    $('button',{class:'btn sub',text:p.segs.length>1?'1段目をコピー':'本文をコピー',onclick:()=>copy(p.segs[0],msg,p.segs.length>1?'1段目':'本文')}),
+    p.imgs.length?$('button',{class:'btn sub',text:'画像を保存',onclick:()=>saveImgs(files(),msg)}):null
+  ]);
+  p.segs.forEach((s,i)=>{
+    const seg=$('div',{class:'seg'});
+    if(p.segs.length>1) seg.appendChild($('div',{class:'sl',text:(i+1)+'段目'+(i===0?'（最初の投稿）':'（自分の投稿に返信で）')}));
+    const tx=$('div',{class:'txt'+(s.length>140?' fold':''),text:s}); seg.appendChild(tx);
+    if(s.length>140) seg.appendChild($('button',{class:'more',text:'全文を見る',onclick:e=>{tx.classList.toggle('fold');e.target.textContent=tx.classList.contains('fold')?'全文を見る':'たたむ';}}));
+    if(i>0) seg.appendChild($('div',{class:'btns'},[$('button',{class:'btn sub',text:(i+1)+'段目をコピー',onclick:()=>copy(s,msg,(i+1)+'段目')})]));
+    body.appendChild(seg);
+    if(i===0) body.append(main,subs);
+  });
+  const mark=$('button',{class:'btn '+(isDone?'undo':'done'),text:isDone?'投稿したを取り消す':'投稿した',onclick:()=>{
+    if(isDone) delete done[p.id]; else { const d=new Date(); done[p.id]=String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0'); open[p.id]=false; }
+    LS.set('gp_done',done); render(); if(!isDone){ const nx=document.querySelector('.card.next'); if(nx) nx.scrollIntoView({behavior:'smooth',block:'start'}); }
+  }});
+  body.append($('div',{class:'btns'},[mark]),msg);
+  c.appendChild(body);
+  return c;
+}
+
+function copy(t,msg,lab){
+  const ok=()=>{msg.className='msg';msg.textContent=lab+'をコピーしました（'+t.length+'字）'};
+  try{ navigator.clipboard.writeText(t).then(ok,()=>{msg.className='msg err';msg.textContent='コピーできませんでした'}); }catch(e){ msg.className='msg err'; msg.textContent='コピーできませんでした'; }
+}
+// 本文はコピーもしておく＝X が本文を落とした時は長押しで貼るだけ。share は押したその場で呼ぶ（await を挟むと iPhone が止める）
+function openX(p,fs,msg){
+  const t=p.segs[0];
+  try{ navigator.clipboard.writeText(t).catch(()=>{}); }catch(e){}
+  if(p.imgs.length && fs.length<p.imgs.length){ msg.className='msg err'; msg.textContent='画像を読み込み中です。2〜3秒待ってもう一度押してください'; return; }
+  const data=fs.length?{files:fs,text:t}:{text:t};
+  if(navigator.share && (!fs.length || (navigator.canShare&&navigator.canShare({files:fs})))){
+    navigator.share(data).then(()=>{msg.className='msg';msg.textContent='X で出したら「投稿した」を押してください（本文はコピー済み。抜けていたら貼り付け）'}).catch(e=>{ if(e&&e.name==='AbortError') return; msg.className='msg err'; msg.textContent='共有できませんでした。「本文をコピー」と「画像を保存」で出してください'; });
+  } else {
+    location.href='https://x.com/intent/post?text='+encodeURIComponent(t);
+  }
+}
+function saveImgs(fs,msg){
+  if(!fs.length){ msg.className='msg err'; msg.textContent='画像を読み込み中です'; return; }
+  if(navigator.share && navigator.canShare && navigator.canShare({files:fs})){ navigator.share({files:fs}).catch(()=>{}); }
+  else fs.forEach(f=>{ const a=$('a',{href:URL.createObjectURL(f),download:f.name}); document.body.appendChild(a); a.click(); a.remove(); });
+}
+
+if('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(()=>{});
+document.addEventListener('visibilitychange',async()=>{ if(document.visibilityState==='visible' && KEY){ try{ const n=await loadIndex(); if(n.built!==IDX.built){ IDX=n; await loadDay(); } }catch(e){} } });
+// 本人「合言葉めんどくさいからいらない」＝鍵はアドレスの #k= に入れる（# より後ろはサーバーに送られない）。ホーム画面のアイコンもこのアドレスで開く
+const fromUrl=new URLSearchParams(location.hash.slice(1)).get('k');
+const saved=fromUrl||LS.get('gp_pass',null);
+if(saved) start(saved).catch(()=>login('合言葉が変わりました。もう一度入れてください')); else login();
+</script>
+</body>
+</html>
