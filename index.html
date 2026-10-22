@@ -141,11 +141,17 @@ async function loadDay(){
   QUOTES = q ? JSON.parse(new TextDecoder().decode(await getBin(q.f))).map(x=>({id:x.id,k:(x.kind==='buzz'?'🟨バズ':'🟦リスト')+'　'+(x.label||x.acc),time:x.slot,segs:[x.text],imgs:x.imgs,quote:x})) : [];
   render();
   // 画像は先に全部ほどいておく＝「Xで開く」を押した瞬間に渡せる（押した後に待つと iPhone が共有を止める）
-  for(const p of SINGLES.concat(QUOTES)) for(const im of p.imgs.concat(p.quote&&p.quote.src_imgs||[])){
-    if(FILES[im.f]) continue;
-    getBin(im.f).then(buf=>{ FILES[im.f]=new File([buf],im.name,{type:'image/jpeg'}); const t=document.getElementById('th-'+im.f); if(t) t.src=URL.createObjectURL(FILES[im.f]); }).catch(()=>{});
-  }
+  for(const p of SINGLES.concat(QUOTES)) for(const im of p.imgs.concat(p.quote&&p.quote.src_imgs||[])) loadImg(im);
 }
+// 本人「元投稿の画像が表示されない」＝上げた直後など1回失敗すると取り直していなかった。失敗したら3秒おきに3回、カードを開いた時もまた取りに行く
+const LOADING={};
+function loadImg(im,left=3){
+  if(FILES[im.f]||LOADING[im.f]) return; LOADING[im.f]=1;
+  getBin(im.f).then(buf=>{ FILES[im.f]=new File([buf],im.name,{type:'image/jpeg'}); document.querySelectorAll('[data-f="'+im.f+'"]').forEach(t=>t.src=URL.createObjectURL(FILES[im.f])); })
+    .catch(()=>{ if(left>0) setTimeout(()=>{ delete LOADING[im.f]; loadImg(im,left-1); },3000); })
+    .finally(()=>{ if(FILES[im.f]) delete LOADING[im.f]; });
+}
+function thumb(im){ if(!FILES[im.f]) loadImg(im); return $('img',{'data-f':im.f,alt:'',src:FILES[im.f]?URL.createObjectURL(FILES[im.f]):'',onclick:e=>{ if(!e.target.src) return; const o=$('div',{class:'big',onclick:()=>o.remove()},[$('img',{src:e.target.src,alt:''})]); document.body.appendChild(o); }}); }
 
 // 本人「時間が来ても投稿できなかったら次自動で時間割り振り」：今日の次の1本が20分過ぎても出ていなければ、残りを今から組み直す
 // 決め事は schedule_times.py と同じ＝前の投稿から45〜100分・分は5の倍数を避ける・リストイン同士は3時間あける
@@ -258,14 +264,14 @@ function card(p,isNext,tm){
     const card2=$('div',{class:'xcard'},[
       $('div',{class:'xwho'},[$('b',{text:q.name||q.acc}),$('span',{text:' '+q.acc})]),
       $('div',{class:'txt',text:q.src||'（元の本文なし）'}),
-      (q.src_imgs||[]).length?$('div',{class:'thumbs'+(q.src_imgs.length>1?' n2':'')},q.src_imgs.map(im=>$('img',{id:'th-'+im.f,alt:'',src:FILES[im.f]?URL.createObjectURL(FILES[im.f]):'',onclick:e=>{ const o=$('div',{class:'big',onclick:()=>o.remove()},[$('img',{src:e.target.src,alt:''})]); document.body.appendChild(o); }}))):null,
+      (q.src_imgs||[]).length?$('div',{class:'thumbs'+(q.src_imgs.length>1?' n2':'')},q.src_imgs.map(im=>thumb(im))):null,
       $('div',{class:'xmeta'},[$('span',{text:meta}),$('a',{class:'more',href:q.url,target:'_blank',rel:'noopener',text:'X で開く ↗'})])
     ]);
     body.appendChild(card2);
     body.appendChild($('div',{class:'sec2',text:'▼ 引用文'}));
   }
   // 本人「画像ちっちゃい」：1枚は横幅いっぱい・2枚以上は2列。押すと全画面
-  const myImgs=()=>$('div',{class:'thumbs'+(p.imgs.length>1?' n2':'')},p.imgs.map(im=>$('img',{id:'th-'+im.f,alt:'',src:FILES[im.f]?URL.createObjectURL(FILES[im.f]):'',onclick:e=>{ const o=$('div',{class:'big',onclick:()=>o.remove()},[$('img',{src:e.target.src,alt:''})]); document.body.appendChild(o); }})));
+  const myImgs=()=>$('div',{class:'thumbs'+(p.imgs.length>1?' n2':'')},p.imgs.map(im=>thumb(im)));
   if(p.imgs.length && !p.quote) body.appendChild(myImgs());
   const msg=$('div',{class:'msg'});
   const files=()=>p.imgs.map(im=>FILES[im.f]).filter(Boolean);
