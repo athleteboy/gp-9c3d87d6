@@ -45,7 +45,9 @@ html,body{margin:0;background:var(--ground);color:var(--ink);font-family:var(--s
 .ch{display:flex;gap:10px;align-items:center;padding:12px 14px;cursor:pointer;-webkit-tap-highlight-color:transparent}
 .tm{font-variant-numeric:tabular-nums;font-weight:700;font-size:17px;min-width:48px}
 .tm.none{color:var(--muted);font-weight:400;font-size:14px}
-.one{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:15px}
+.mid{flex:1;min-width:0;display:flex;flex-direction:column}
+.gen{font-size:12px;font-weight:700;color:var(--accent);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.one{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:15px}
 .tag{font-size:12px;color:var(--muted);white-space:nowrap}
 .chk{font-size:13px;color:var(--ok);font-weight:700;white-space:nowrap}
 .cb{padding:0 14px 14px;display:flex;flex-direction:column;gap:12px}
@@ -70,6 +72,10 @@ html,body{margin:0;background:var(--ground);color:var(--ink);font-family:var(--s
 .qsrc{border:1px solid var(--line);border-radius:10px;padding:10px 12px;display:flex;flex-direction:column;gap:6px;background:var(--ground)}
 .qsrc .txt.fold::after{background:linear-gradient(transparent,var(--ground))}
 a.more{text-decoration:none}
+.sec2{font-size:15px;font-weight:800;margin-top:4px}
+.xcard{border:1px solid var(--line);border-radius:14px;padding:12px 14px;display:flex;flex-direction:column;gap:8px;background:var(--ground)}
+.xwho{font-size:15px}.xwho span{color:var(--muted)}
+.xmeta{display:flex;justify-content:space-between;gap:8px;font-size:13px;color:var(--muted);flex-wrap:wrap}
 .msg.err{color:var(--warn)}
 .empty{text-align:center;color:var(--muted);padding:32px 12px;border:1px dashed var(--line);border-radius:14px;font-size:15px}
 .login{display:flex;flex-direction:column;gap:12px;padding-top:20vh}
@@ -125,6 +131,9 @@ async function start(pass){
   LS.set('gp_pass',pass);
 }
 let MODE=LS.get('gp_mode','single'), SINGLES=[], QUOTES=[];
+const QS=new URLSearchParams(location.search);
+if(QS.get('tab')){ MODE=QS.get('tab'); LS.set('gp_mode',MODE); if(QS.get('id')) open[QS.get('id')]=true; }
+navigator.serviceWorker&&navigator.serviceWorker.addEventListener('message',e=>{ const o=e.data&&e.data.open; if(!o) return; MODE=o.tab||MODE; LS.set('gp_mode',MODE); if(o.id) open[o.id]=true; if(IDX) loadIndex().then(n=>{IDX=n;return loadDay();}); });
 async function loadDay(){
   const d=IDX.days[DAY], q=(IDX.quotes||{})[DAY];
   SINGLES = d ? JSON.parse(new TextDecoder().decode(await getBin(d.f))) : [];
@@ -132,7 +141,7 @@ async function loadDay(){
   QUOTES = q ? JSON.parse(new TextDecoder().decode(await getBin(q.f))).map(x=>({id:x.id,k:(x.kind==='buzz'?'🟨バズ':'🟦リスト')+'　'+(x.label||x.acc),time:x.slot,segs:[x.text],imgs:x.imgs,quote:x})) : [];
   render();
   // 画像は先に全部ほどいておく＝「Xで開く」を押した瞬間に渡せる（押した後に待つと iPhone が共有を止める）
-  for(const p of SINGLES.concat(QUOTES)) for(const im of p.imgs){
+  for(const p of SINGLES.concat(QUOTES)) for(const im of p.imgs.concat(p.quote&&p.quote.src_imgs||[])){
     if(FILES[im.f]) continue;
     getBin(im.f).then(buf=>{ FILES[im.f]=new File([buf],im.name,{type:'image/jpeg'}); const t=document.getElementById('th-'+im.f); if(t) t.src=URL.createObjectURL(FILES[im.f]); }).catch(()=>{});
   }
@@ -170,6 +179,10 @@ function render(){
   const ds=Object.keys(IDX.days).sort();
   const eff = MODE==='quote' ? (p=>p.time) : sched();
   const L=list().slice().sort((a,b)=>toM(eff(a))-toM(eff(b)));
+  // 本人「ジャンルも書いて欲しい　SNS 1/2 とか」「引用は元投稿のアカウント名も」
+  if(MODE==='quote') L.forEach(p=>{ p._g=(p.quote.kind==='buzz'?'🟨 ':'🟦 ')+(p.quote.name||p.quote.acc); });
+  else { const by={}; L.forEach(p=>{ const m=/^\d+\s+(.+?)｜/.exec(p.k||''); const g=m?m[1]:'その他'; (by[g]=by[g]||[]).push(p); });
+    Object.entries(by).forEach(([g,ps])=>ps.forEach((p,i)=>{ p._g=g+' '+(i+1)+'/'+ps.length; })); }
   const n=L.length, k=L.filter(p=>done[p.id]).length;
   const nq=(IDX.quotes&&IDX.quotes[DAY]||{}).n||0;
   const tab=(m,lab)=>$('button',{class:'day'+(MODE===m?' sel':''),text:lab,onclick:()=>{MODE=m;LS.set('gp_mode',m);render();scrollTo(0,0);}});
@@ -190,6 +203,32 @@ function render(){
   rest.forEach(p=>app.appendChild(card(p,p.id===nx,eff(p))));
   if(fin.length){ app.appendChild($('div',{class:'sec',text:'投稿した（'+fin.length+'）'})); fin.forEach(p=>app.appendChild(card(p,false,eff(p)))); }
   app.appendChild($('div',{class:'foot',text:'更新 '+IDX.built}));
+  app.appendChild(notifBox());
+}
+const VAPID='BG3ovvXhHy_tRwN6PgOeR9K2sTNx6JH89wtin5Rii79QZoXRSnNOQjm8smQNkgb4gqk-bXQvaxnOQGXm03OoXHM';
+function notifBox(){
+  const box=$('div',{class:'foot'});
+  const st=('Notification' in window)?Notification.permission:'none';
+  if(LS.get('gp_sub',null) && st==='granted'){ box.append($('div',{text:'通知：オン（投稿の時刻・引用ができた時）'}), $('button',{class:'more',text:'送り先の文字をもう一度出す',onclick:()=>showSub(LS.get('gp_sub',''))})); return box; }
+  if(!('PushManager' in window)){ box.textContent='通知はホーム画面のアイコンから開いた時だけ使えます'; return box; }
+  box.appendChild($('button',{class:'btn sub',text:'通知をオン',onclick:async e=>{
+    try{
+      const p=await Notification.requestPermission(); if(p!=='granted'){ e.target.textContent='許可されませんでした（設定→通知→投稿 で許可）'; return; }
+      const reg=await navigator.serviceWorker.ready;
+      const key=Uint8Array.from(atob(VAPID.replace(/-/g,'+').replace(/_/g,'/')+'='.repeat((4-VAPID.length%4)%4)),c=>c.charCodeAt(0));
+      const sub=await reg.pushManager.subscribe({userVisibleOnly:true,applicationServerKey:key});
+      const code=btoa(JSON.stringify(sub.toJSON())); LS.set('gp_sub',code); showSub(code);
+    }catch(x){ e.target.textContent='できませんでした：'+(x&&x.message||x); }
+  }}));
+  return box;
+}
+function showSub(code){
+  const o=$('div',{class:'big',style:'flex-direction:column;gap:12px;padding:24px'},[
+    $('div',{style:'color:#fff;font-size:16px;text-align:center',text:'下の文字をコピーして、Claude に「通知の送り先」と言って貼ってください（1回だけ）'}),
+    $('textarea',{style:'width:100%;height:30vh;font-size:12px',readonly:''}),
+    $('button',{class:'btn',text:'コピー',onclick:()=>{ try{navigator.clipboard.writeText(code)}catch(x){} }}),
+    $('button',{class:'btn sub',style:'color:#fff',text:'閉じる',onclick:()=>o.remove()})]);
+  o.querySelector('textarea').value=code; document.body.appendChild(o);
 }
 
 function card(p,isNext,tm){
@@ -200,7 +239,7 @@ function card(p,isNext,tm){
   const first=(p.segs[0]||'').split('\n')[0];
   const head=$('div',{class:'ch',onclick:()=>{open[p.id]=!isOpen;render();}},[
     $('div',{class:'tm'+(tm?'':' none'),text:!tm?'時刻なし':toM(tm)>=1440?'明日へ':tm}),
-    $('div',{class:'one',text:first}),
+    $('div',{class:'mid'},[$('div',{class:'gen',text:p._g||''}),$('div',{class:'one',text:first})]),
     isDone?$('span',{class:'chk',text:'✓ '+done[p.id]}):$('span',{class:'tag',text:(p.segs.length>1?'ツリー'+p.segs.length+'段・':'')+(p.imgs.length?'画像'+p.imgs.length:'文字だけ')})
   ]);
   c.appendChild(head);
@@ -211,13 +250,23 @@ function card(p,isNext,tm){
   if(isNext && DAY===today() && tm && !p.quote){ const d=toM(tm)-nowM(); body.appendChild($('div',{class:'when',text:d>0?'あと'+(d>=60?Math.floor(d/60)+'時間':'')+(d%60)+'分（'+tm+'）':'今出す'})); }
   if(!p.quote && toM(tm)>23*60+30 && toM(tm)<99*60) body.appendChild($('div',{class:'msg err',text:toM(tm)>=1440?'今日のうちに入りません。明日に回すか、すぐ出してください':'23:30 を過ぎます。明日に回してもいいです'}));
   if(p.quote){
-    const q=p.quote, src=$('div',{class:'txt fold',text:q.src||'（元の本文なし）'});
-    body.appendChild($('div',{class:'qsrc'},[$('div',{class:'sl',text:'元投稿 '+q.acc}),src,$('div',{class:'btns'},[
-      $('button',{class:'more',text:'全文を見る',onclick:e=>{src.classList.toggle('fold');e.target.textContent=src.classList.contains('fold')?'全文を見る':'たたむ';}}),
-      $('a',{class:'more',href:q.url,target:'_blank',rel:'noopener',text:'元を開く ↗'})])]));
+    // 本人「元投稿もちゃんと見れるようにしたい　今のディスコード形式を見やすくした版」＝元は X のカードの形で全文と画像まで
+    const q=p.quote;
+    const when=q.created?new Date(q.created*1000):null;
+    const meta=[q.likes!=null?'♥ '+Number(q.likes).toLocaleString():'', q.views!=null?'表示 '+Number(q.views).toLocaleString():'', when?(when.getMonth()+1)+'/'+when.getDate()+' '+String(when.getHours()).padStart(2,'0')+':'+String(when.getMinutes()).padStart(2,'0'):''].filter(Boolean).join('　');
+    body.appendChild($('div',{class:'sec2',text:'▶ 元投稿'}));
+    const card2=$('div',{class:'xcard'},[
+      $('div',{class:'xwho'},[$('b',{text:q.name||q.acc}),$('span',{text:' '+q.acc})]),
+      $('div',{class:'txt',text:q.src||'（元の本文なし）'}),
+      (q.src_imgs||[]).length?$('div',{class:'thumbs'+(q.src_imgs.length>1?' n2':'')},q.src_imgs.map(im=>$('img',{id:'th-'+im.f,alt:'',src:FILES[im.f]?URL.createObjectURL(FILES[im.f]):'',onclick:e=>{ const o=$('div',{class:'big',onclick:()=>o.remove()},[$('img',{src:e.target.src,alt:''})]); document.body.appendChild(o); }}))):null,
+      $('div',{class:'xmeta'},[$('span',{text:meta}),$('a',{class:'more',href:q.url,target:'_blank',rel:'noopener',text:'X で開く ↗'})])
+    ]);
+    body.appendChild(card2);
+    body.appendChild($('div',{class:'sec2',text:'▼ 引用文'}));
   }
   // 本人「画像ちっちゃい」：1枚は横幅いっぱい・2枚以上は2列。押すと全画面
-  if(p.imgs.length) body.appendChild($('div',{class:'thumbs'+(p.imgs.length>1?' n2':'')},p.imgs.map(im=>$('img',{id:'th-'+im.f,alt:'',src:FILES[im.f]?URL.createObjectURL(FILES[im.f]):'',onclick:e=>{ const o=$('div',{class:'big',onclick:()=>o.remove()},[$('img',{src:e.target.src,alt:''})]); document.body.appendChild(o); }}))));
+  const myImgs=()=>$('div',{class:'thumbs'+(p.imgs.length>1?' n2':'')},p.imgs.map(im=>$('img',{id:'th-'+im.f,alt:'',src:FILES[im.f]?URL.createObjectURL(FILES[im.f]):'',onclick:e=>{ const o=$('div',{class:'big',onclick:()=>o.remove()},[$('img',{src:e.target.src,alt:''})]); document.body.appendChild(o); }})));
+  if(p.imgs.length && !p.quote) body.appendChild(myImgs());
   const msg=$('div',{class:'msg'});
   const files=()=>p.imgs.map(im=>FILES[im.f]).filter(Boolean);
   // ツリーは「1段目 → Xで開く → 2段目以降をコピー」の順（出す順に上から押すだけ）
@@ -230,13 +279,12 @@ function card(p,isNext,tm){
   ]);
   p.segs.forEach((s,i)=>{
     const seg=$('div',{class:'seg'});
-    if(p.quote) seg.appendChild($('div',{class:'sl',text:'引用文'}));
     if(p.segs.length>1) seg.appendChild($('div',{class:'sl',text:(i+1)+'段目'+(i===0?'（最初の投稿）':'（自分の投稿に返信で）')}));
     const tx=$('div',{class:'txt'+(s.length>140?' fold':''),text:s}); seg.appendChild(tx);
     if(s.length>140) seg.appendChild($('button',{class:'more',text:'全文を見る',onclick:e=>{tx.classList.toggle('fold');e.target.textContent=tx.classList.contains('fold')?'全文を見る':'たたむ';}}));
     if(i>0) seg.appendChild($('div',{class:'btns'},[$('button',{class:'btn sub',text:(i+1)+'段目をコピー',onclick:()=>copy(s,msg,(i+1)+'段目')})]));
     body.appendChild(seg);
-    if(i===0) body.append(main,subs);
+    if(i===0){ if(p.quote) body.append($('div',{class:'sec2',text:'▼ 画像'}), p.imgs.length?myImgs():$('div',{class:'tag',text:'画像なし'})); body.append(main,subs); }
   });
   const mark=$('button',{class:'btn '+(isDone?'undo':'done'),text:isDone?'投稿したを取り消す':'投稿した',onclick:()=>{
     if(isDone) delete done[p.id]; else { const d=new Date(); done[p.id]=String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0'); open[p.id]=false; }
