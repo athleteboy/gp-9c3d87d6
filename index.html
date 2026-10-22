@@ -33,6 +33,8 @@ html,body{margin:0;background:var(--ground);color:var(--ink);font-family:var(--s
 .bar{display:flex;align-items:center;gap:8px}
 .days{display:flex;gap:6px;flex:1;overflow-x:auto}
 .day{flex:0 0 auto;border:1px solid var(--line);background:var(--surface);color:var(--ink);border-radius:999px;padding:6px 14px;font:inherit;font-size:14px}
+.day.today{border:2px solid var(--ok);font-weight:700}
+.tbadge{background:var(--ok);color:#fff;border-radius:999px;padding:1px 8px;font-size:12px;font-weight:800;margin-right:2px}
 .day.sel{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
 .icon{border:1px solid var(--line);background:var(--surface);color:var(--ink);border-radius:999px;padding:6px 12px;font:inherit;font-size:14px}
 .prog{display:flex;align-items:center;gap:10px;font-size:14px;color:var(--muted)}
@@ -245,7 +247,7 @@ function render(){
   const tab=(m,lab)=>$('button',{class:'day'+(MODE===m?' sel':''),text:lab,onclick:()=>{MODE=m;LS.set('gp_mode',m);render();scrollTo(0,0);}});
   const top=$('div',{class:'top'},[
     $('div',{class:'bar'},[
-      $('div',{class:'days'},ds.map(d=>$('button',{class:'day'+(d===DAY?' sel':''),text:(d===today()?'今日 ':'')+md(d),onclick:async()=>{DAY=d;LS.set('gp_day',d);await loadDay();}}))),
+      $('div',{class:'days'},ds.map(d=>$('button',{class:'day'+(d===DAY?' sel':'')+(d===today()?' today':''),onclick:async()=>{DAY=d;LS.set('gp_day',d);await loadDay();}},d===today()?[$('span',{class:'tbadge',text:'今日'}),' '+md(d)]:[md(d)]))),
       $('button',{class:'icon',text:'更新',onclick:async e=>{e.target.textContent='…';try{IDX=await loadIndex();await loadDay();}catch(x){e.target.textContent='✕'}}})
     ]),
     $('div',{class:'bar'},[tab('single','単独 '+((IDX.days[DAY]||{}).n||0)+'本'),tab('quote','引用 '+nq+'本')]),
