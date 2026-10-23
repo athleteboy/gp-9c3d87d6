@@ -87,6 +87,7 @@ html,body{margin:0;background:var(--ground);color:var(--ink);font-family:var(--s
 .ln.sel{outline:2px solid var(--accent);outline-offset:2px;background:color-mix(in srgb,var(--accent) 25%,transparent);border-radius:4px}
 .note{width:100%;min-height:64px;font:inherit;font-size:15px;padding:10px;border-radius:10px;border:1px solid var(--line);background:var(--ground);color:var(--ink)}
 .ln.k3{background:color-mix(in srgb,#8b8d98 40%,transparent);text-decoration:line-through}
+.ln.k5{background:color-mix(in srgb,#30a46c 35%,transparent)}
 .when{font-size:15px;font-weight:700;color:var(--accent)}
 .qsrc{border:1px solid var(--line);border-radius:10px;padding:10px 12px;display:flex;flex-direction:column;gap:6px;background:var(--ground)}
 .qsrc .txt.fold::after{background:linear-gradient(transparent,var(--ground))}
@@ -287,16 +288,21 @@ function pickMark(id,ln,sp,isHook){
   sp.classList.add('sel');
   { const r=sp.getBoundingClientRect(); window.scrollBy({top:r.top-innerHeight*0.18,behavior:'smooth'}); }   // 下の選択肢に隠れないよう上へ
   const close=()=>{ sp.classList.remove('sel'); o.remove(); };
-  const ta=$('textarea',{class:'note',placeholder:'ひとこと（書かなくてもいい）例：意味が逆／もっと具体の数字／言い切って'}); ta.value=note0;
+  // 本人 10/23「文字書いたけど送るとかなくて閉じるしかないから送れてない」＝種類を選ばずにひとことだけでも送る（印は「ひとこと」）
+  const changed=()=>ta.value.trim()!==note0;
+  const ta=$('textarea',{class:'note',placeholder:'ひとこと（種類を選ばずに書いて送ってもいい）例：意味が逆／もっと具体の数字／言い切って',oninput:()=>{ snd.style.display=changed()&&ta.value.trim()?'':'none'; }}); ta.value=note0;
   const setNote=()=>{ const m=M(id); m.notes=m.notes||{}; const v=ta.value.trim(); if(v) m.notes[ln]=v; else delete m.notes[ln]; };
-  const o=$('div',{class:'sheet',onclick:e=>{ if(e.target===o){ if(cur&&ta.value.trim()!==note0){ setNote(); dirty(M(id)); } close(); } }},[$('div',{class:'sheetin'},[
+  const sendNote=()=>{ setNote(); const k=cur||'ひとこと'; setMark(id,ln,k); sp.className='ln mk k'+kc(k); sp.dataset.k=k; close(); };
+  const leave=()=>{ if(changed()&&ta.value.trim()) return sendNote(); if(cur&&changed()){ setNote(); dirty(M(id)); } close(); };
+  const snd=$('button',{class:'btn',text:'ひとことを送る',style:'display:none',onclick:sendNote});
+  const o=$('div',{class:'sheet',onclick:e=>{ if(e.target===o) leave(); }},[$('div',{class:'sheetin'},[
     $('div',{class:'sheetln',text:ln}),
     ...kinds.map(k=>$('button',{class:'btn sub kb'+(cur===k?' on':''),'data-k':k,text:k,onclick:()=>{ setNote(); setMark(id,ln,k); sp.className='ln mk k'+kc(k); sp.dataset.k=k; close(); }})),
-    ta,
-    $('button',{class:'btn sub',text:cur?'印を外す':'閉じる',onclick:()=>{ if(cur){ const m=M(id); if(m.notes) delete m.notes[ln]; setMark(id,ln,''); sp.className='ln'; sp.dataset.k=''; } close(); }})])]);
+    ta, snd,
+    $('button',{class:'btn sub',text:cur?'印を外す':'閉じる',onclick:()=>{ if(cur){ const m=M(id); if(m.notes) delete m.notes[ln]; setMark(id,ln,''); sp.className='ln'; sp.dataset.k=''; close(); } else leave(); }})])]);
   document.body.appendChild(o);
 }
-const kc=k=>k==='フックが弱い'?0:KINDS.indexOf(k);
+const kc=k=>k==='フックが弱い'?0:k==='ひとこと'?5:KINDS.indexOf(k);
 async function sendMarks(){
   if(!CFG||!KEY||location.hostname==='127.0.0.1') return; const todo=Object.entries(MARKS).filter(([,m])=>!m.sent); if(!todo.length) return;
   try{
