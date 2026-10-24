@@ -151,7 +151,7 @@ async function start(pass){
   LS.set('gp_pass',pass);
   if(IDX.cfg){ try{ CFG=JSON.parse(new TextDecoder().decode(await getBin(IDX.cfg))); sendMarks(); render(); }catch(e){} }
 }
-let LEFT=[], leftOpen=false, MODE=LS.get('gp_mode','single'), SINGLES=[], QUOTES=[], MOVE=LS.get('gp_move',{});
+let LEFT=[], leftOpen=false, MODE=LS.get('gp_mode','single'), SINGLES=[], QUOTES=[], ROUNDS=[], NEWS=[], MOVE=LS.get('gp_move',{});
 const QS=new URLSearchParams(location.search);
 if(QS.get('tab')){ MODE=QS.get('tab'); LS.set('gp_mode',MODE); if(QS.get('id')) open[QS.get('id')]=true; }
 navigator.serviceWorker&&navigator.serviceWorker.addEventListener('message',e=>{ const o=e.data&&e.data.open; if(!o) return; MODE=o.tab||MODE; LS.set('gp_mode',MODE); if(o.id) open[o.id]=true; if(IDX) loadIndex().then(n=>{IDX=n;return loadDay();}); });
@@ -170,9 +170,13 @@ async function loadDay(){
   }
   // 引用は単独と同じカードで出す（time＝回の時刻・segs＝引用文・quote＝元）
   QUOTES = q ? JSON.parse(new TextDecoder().decode(await getBin(q.f))).map(x=>({id:x.id,k:(x.code?x.code+'　':'')+(x.kind==='buzz'?'🟨バズ':'🟦リスト')+'　'+(x.label||x.acc),time:x.slot,segs:[x.text],imgs:x.imgs,quote:x})).filter(x=>MOVE[x.id]!=='drop') : [];
+  // 本人「2時間おきの話題の見張りもアプリに反映してほしい　なければ対象なしって出るように」：回ごと（作った本／対象なし／まだ／未完）
+  const nw=(IDX.news||{})[DAY];
+  ROUNDS = nw ? JSON.parse(new TextDecoder().decode(await getBin(nw.f))) : [];
+  NEWS = ROUNDS.flatMap(r=>r.posts.map(x=>({...x,_round:r.slot}))).filter(x=>MOVE[x.id]!=='drop');
   render();
   // 画像は先に全部ほどいておく＝「Xで開く」を押した瞬間に渡せる（押した後に待つと iPhone が共有を止める）
-  for(const p of SINGLES.concat(QUOTES)) for(const im of p.imgs.concat(p.quote&&p.quote.src_imgs||[])) loadImg(im);
+  for(const p of SINGLES.concat(QUOTES,NEWS)) for(const im of p.imgs.concat(p.quote&&p.quote.src_imgs||[])) loadImg(im);
 }
 // 本人「元投稿の画像が表示されない」＝上げた直後など1回失敗すると取り直していなかった。失敗したら3秒おきに3回、カードを開いた時もまた取りに行く
 const LOADING={};
@@ -234,30 +238,46 @@ function sendSched(eff){
     }catch(e){}
   },3000);
 }
-function list(){ return MODE==='quote'?QUOTES:SINGLES; }
+function list(){ return MODE==='quote'?QUOTES:MODE==='news'?NEWS:SINGLES; }
 function render(){
   const app=document.getElementById('app'); app.textContent='';
   const ds=Object.keys(IDX.days).sort().filter(d=>d>=today());   // 昨日のタブは出さない（本人「出ちゃうと分かりづらい」）。昨日の分は今日の下の「昨日の残り」だけ
-  const eff = MODE==='quote' ? (p=>p.time) : sched();
+  const eff = MODE!=='single' ? (p=>p.time) : sched();
   const L=list().slice().sort((a,b)=>toM(eff(a))-toM(eff(b)));
   // 本人「ジャンルも書いて欲しい　SNS 1/2 とか」「引用は元投稿のアカウント名も」
   if(MODE==='quote') L.forEach(p=>{ p._g=(p.quote.kind==='buzz'?'🟨 ':'🟦 ')+(p.quote.name||p.quote.acc); });
+  else if(MODE==='news') L.forEach(p=>{ p._g='🟥 話題 '+p._round+' の回'; });
   else { const by={}; L.forEach(p=>{ const m=/^\d+\s+(.+?)｜/.exec(p.k||''); const g=m?m[1]:'その他'; (by[g]=by[g]||[]).push(p); });
     Object.entries(by).forEach(([g,ps])=>ps.forEach((p,i)=>{ p._g=g+' '+(i+1)+'/'+ps.length; })); }
   const n=L.length, k=L.filter(p=>done[p.id]).length;
-  const nq=(IDX.quotes&&IDX.quotes[DAY]||{}).n||0;
+  const nq=(IDX.quotes&&IDX.quotes[DAY]||{}).n||0, nn=(IDX.news&&IDX.news[DAY]||{}).n||0;
   const tab=(m,lab)=>$('button',{class:'day'+(MODE===m?' sel':''),text:lab,onclick:()=>{MODE=m;LS.set('gp_mode',m);render();scrollTo(0,0);}});
   const top=$('div',{class:'top'},[
     $('div',{class:'bar'},[
       $('div',{class:'days'},ds.map(d=>$('button',{class:'day'+(d===DAY?' sel':'')+(d===today()?' today':''),onclick:async()=>{DAY=d;LS.set('gp_day',d);await loadDay();}},d===today()?[$('span',{class:'tbadge',text:'今日'}),' '+md(d)]:[md(d)]))),
       $('button',{class:'icon',text:'更新',onclick:async e=>{e.target.textContent='…';try{IDX=await loadIndex();await loadDay();}catch(x){e.target.textContent='✕'}}})
     ]),
-    $('div',{class:'bar'},[tab('single','単独 '+((IDX.days[DAY]||{}).n||0)+'本'),tab('quote','引用 '+nq+'本')]),
+    $('div',{class:'bar'},[tab('single','単独 '+((IDX.days[DAY]||{}).n||0)+'本'),tab('quote','引用 '+nq+'本'),tab('news','話題 '+nn+'本')]),
     $('div',{class:'prog'},[$('span',{},[$('b',{text:k+'/'+n}),' 本 済み']),$('div',{class:'meter'},[$('i',{style:'width:'+(n?k/n*100:0)+'%'})])])
   ]);
   app.appendChild(top);
   const S=LS.get('gp_sched_'+DAY,{});
   if(MODE==='single' && S._at) app.appendChild($('div',{class:'tag',text:'↻ '+S._at+' に、出せていない分の時刻を今から組み直しました'}));
+  if(MODE==='news'){
+    // 回ごとに上から：作った本はカード、作る物が無かった回は「対象なし」と理由
+    const nx=L.filter(p=>!done[p.id])[0], nxid=nx&&nx.id;
+    if(!ROUNDS.length) app.appendChild($('div',{class:'empty',text:'この日の話題の回はまだありません（8時〜22時の2時間おき）'}));
+    ROUNDS.forEach(r=>{
+      const ps=L.filter(p=>p._round===r.slot);
+      const lab={'作った':ps.length+'本','対象なし':'対象なし','まだ':'まだ（'+r.slot+' に見ます）','未完':'回が終わっていません'}[r.state]||r.state;
+      app.appendChild($('div',{class:'sec',text:r.slot+' の回　'+lab}));
+      if(r.state==='対象なし'&&r.why) app.appendChild($('div',{class:'tag',text:r.why}));
+      ps.forEach(p=>app.appendChild(card(p,p.id===nxid,eff(p))));
+    });
+    app.appendChild($('div',{class:'foot',text:'更新 '+IDX.built}));
+    app.appendChild(notifBox());
+    return;
+  }
   if(!n){ app.appendChild($('div',{class:'empty',text:MODE==='quote'?'この日の引用はまだありません（08:00・11:30・14:30・18:00・20:00 の回で届きます）':'この日の投稿はまだありません。予約表で「予約に入れる」を押した物がここに出ます'})); }
   const rest=L.filter(p=>!done[p.id]), fin=L.filter(p=>done[p.id]).sort((a,b)=>done[b.id]<done[a.id]?-1:1);
   const nx=rest[0]&&rest[0].id;
@@ -307,7 +327,7 @@ async function sendMarks(){
   if(!CFG||!KEY||location.hostname==='127.0.0.1') return; const todo=Object.entries(MARKS).filter(([,m])=>!m.sent); if(!todo.length) return;
   try{
     const iv=crypto.getRandomValues(new Uint8Array(12));
-    const ct=new Uint8Array(await crypto.subtle.encrypt({name:'AES-GCM',iv},KEY,new TextEncoder().encode(JSON.stringify({at:new Date().toISOString(),marks:Object.fromEntries(todo.map(([id,m])=>[id,m.lines])),kinds:Object.fromEntries(todo.map(([id,m])=>[id,m.kinds||{}])),post:Object.fromEntries(todo.map(([id,m])=>[id,m.post||[]])),notes:Object.fromEntries(todo.map(([id,m])=>[id,m.notes||{}])),img:Object.fromEntries(todo.map(([id,m])=>[id,m.img||[]]))}))));
+    const ct=new Uint8Array(await crypto.subtle.encrypt({name:'AES-GCM',iv},KEY,new TextEncoder().encode(JSON.stringify({at:new Date().toISOString(),marks:Object.fromEntries(todo.map(([id,m])=>[id,m.lines])),kinds:Object.fromEntries(todo.map(([id,m])=>[id,m.kinds||{}])),post:Object.fromEntries(todo.map(([id,m])=>[id,m.post||[]])),notes:Object.fromEntries(todo.map(([id,m])=>[id,m.notes||{}])),comment:Object.fromEntries(todo.map(([id,m])=>[id,m.comment||''])),img:Object.fromEntries(todo.map(([id,m])=>[id,m.img||[]]))}))));
     const all=new Uint8Array(12+ct.length); all.set(iv); all.set(ct,12);
     let bin=''; all.forEach(b=>bin+=String.fromCharCode(b));
     const r=await fetch('https://api.github.com/repos/'+CFG.repo+'/issues/'+CFG.issue+'/comments',{method:'POST',headers:{'Authorization':'Bearer '+CFG.token,'Accept':'application/vnd.github+json'},body:JSON.stringify({body:'gpm1:'+btoa(bin)})});
@@ -359,6 +379,11 @@ function card(p,isNext,tm){
   const chip=(key,v)=>{ const on=!!(MARKS[p.id]&&(MARKS[p.id][key]||[]).includes(v)); return $('button',{class:'chip'+(on?' on':''),text:v,onclick:e=>{ e.target.classList.toggle('on',toggleList(p.id,key,v)); }}); };
   if(!p.quote) body.appendChild($('div',{class:'chips'},[$('span',{class:'hint',text:'この投稿：'}),chip('post','フックが弱い'),chip('post','ネタが弱い'),chip('post','いい')]));
   else body.appendChild($('div',{class:'chips'},[$('span',{class:'hint',text:'この引用：'}),chip('post','フックが弱い'),chip('post','角度が弱い'),chip('post','いい')]));
+  // 本人 10/24「1投稿丸ごとダメと思った場合のコメント書くところ作ってほしい」「こうゆうのを評価として書きたい　それで学んでほしい」
+  { const c0=(MARKS[p.id]||{}).comment||''; const st=$('span',{class:'hint',text:c0?'送った ✓':''});
+    const ta=$('textarea',{class:'note',placeholder:'この'+(p.quote?'引用':'投稿')+'まるごとの評価（なぜダメか・どう見てほしいか）',oninput:()=>{ sb.style.display=ta.value.trim()!==c0?'':'none'; }}); ta.value=c0;
+    const sb=$('button',{class:'btn sub',text:'評価を送る',style:'display:none',onclick:()=>{ const m=M(p.id); m.comment=ta.value.trim(); dirty(m); st.textContent='送った ✓'; sb.style.display='none'; }});
+    body.appendChild($('div',{class:'cmt'},[ta,$('div',{class:'btns'},[sb,st])])); }
   // 次の1本は「あと◯分」を出す（今日だけ）。23:30 を過ぎる本は明日に回してもいい
   if(isNext && DAY===today() && tm && !p.quote){ const d=toM(tm)-nowM(); body.appendChild($('div',{class:'when',text:d>0?'あと'+(d>=60?Math.floor(d/60)+'時間':'')+(d%60)+'分（'+tm+'）':'今出す'})); }
   if(!p.quote && toM(tm)>23*60+30 && toM(tm)<99*60) body.appendChild($('div',{class:'msg err',text:toM(tm)>=1440?'今日のうちに入りません。明日に回すか、すぐ出してください':'23:30 を過ぎます。明日に回してもいいです'}));
@@ -406,7 +431,7 @@ function card(p,isNext,tm){
   // 明日に回す／今回は出さない（出していない本だけ）
   const tmr=(()=>{ const d=new Date(DAY+'T00:00:00'); d.setDate(d.getDate()+1); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); })();
   const moveRow=isDone?null:$('div',{class:'btns'},[
-    p.quote?null:p._left?$('button',{class:'btn sub',text:'今日に回す',onclick:async()=>{ MOVE[p.id]=DAY; LS.set('gp_move',MOVE); await loadDay(); }}):$('button',{class:'btn sub',text:'明日に回す',onclick:async()=>{ MOVE[p.id]=tmr; LS.set('gp_move',MOVE); await loadDay(); }}),
+    p.quote||p._round?null:p._left?$('button',{class:'btn sub',text:'今日に回す',onclick:async()=>{ MOVE[p.id]=DAY; LS.set('gp_move',MOVE); await loadDay(); }}):$('button',{class:'btn sub',text:'明日に回す',onclick:async()=>{ MOVE[p.id]=tmr; LS.set('gp_move',MOVE); await loadDay(); }}),
     $('button',{class:'btn sub',text:'今回は出さない',onclick:async()=>{ MOVE[p.id]='drop'; LS.set('gp_move',MOVE); await loadDay(); }})]);
   if(p._moved||p._left) body.insertBefore($('div',{class:'when',text:md(p._moved||p._left)+(p._left?' に出していない本':' から回してきた本')}),body.firstChild);
   const mark=$('button',{class:'btn '+(isDone?'undo':'done'),text:isDone?'投稿したを取り消す':'投稿した',onclick:()=>{
