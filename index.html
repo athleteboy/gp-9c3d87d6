@@ -381,9 +381,9 @@ function card(p,isNext,tm){
   else body.appendChild($('div',{class:'chips'},[$('span',{class:'hint',text:'この引用：'}),chip('post','フックが弱い'),chip('post','角度が弱い'),chip('post','いい')]));
   // 本人 10/24「1投稿丸ごとダメと思った場合のコメント書くところ作ってほしい」「こうゆうのを評価として書きたい　それで学んでほしい」
   { const c0=(MARKS[p.id]||{}).comment||''; const st=$('span',{class:'hint',text:c0?'送った ✓':''});
-    const ta=$('textarea',{class:'note',placeholder:'この'+(p.quote?'引用':'投稿')+'まるごとの評価（なぜダメか・どう見てほしいか）',oninput:()=>{ sb.style.display=ta.value.trim()!==c0?'':'none'; }}); ta.value=c0;
-    const sb=$('button',{class:'btn sub',text:'評価を送る',style:'display:none',onclick:()=>{ const m=M(p.id); m.comment=ta.value.trim(); dirty(m); st.textContent='送った ✓'; sb.style.display='none'; }});
-    body.appendChild($('div',{class:'cmt'},[ta,$('div',{class:'btns'},[sb,st])])); }
+    // 本人 10/24「これはかいただけで見てくれる？　今送信ないけどいいんだよね？」＝書いた手が止まったら自動で送る（ボタンなし）
+    let tm=null; const ta=$('textarea',{class:'note',placeholder:'この'+(p.quote?'引用':'投稿')+'まるごとの評価（書くだけで送られます）',oninput:()=>{ st.textContent='…'; clearTimeout(tm); tm=setTimeout(()=>{ const m=M(p.id); m.comment=ta.value.trim(); dirty(m); st.textContent=m.comment?'送った ✓':''; },1500); }}); ta.value=c0;
+    body.appendChild($('div',{class:'cmt'},[ta,st])); }
   // 次の1本は「あと◯分」を出す（今日だけ）。23:30 を過ぎる本は明日に回してもいい
   if(isNext && DAY===today() && tm && !p.quote){ const d=toM(tm)-nowM(); body.appendChild($('div',{class:'when',text:d>0?'あと'+(d>=60?Math.floor(d/60)+'時間':'')+(d%60)+'分（'+tm+'）':'今出す'})); }
   if(!p.quote && toM(tm)>23*60+30 && toM(tm)<99*60) body.appendChild($('div',{class:'msg err',text:toM(tm)>=1440?'今日のうちに入りません。明日に回すか、すぐ出してください':'23:30 を過ぎます。明日に回してもいいです'}));
