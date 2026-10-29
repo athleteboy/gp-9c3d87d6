@@ -169,7 +169,7 @@ async function loadDay(){
     else if(!mv && DAY===today() && dd===yday && !done[x.id]) LEFT.push({...x,time:'',_left:dd});   // 前日の残り＝下に畳んで出す（自動では足さない）
   }
   // 引用は単独と同じカードで出す（time＝回の時刻・segs＝引用文・quote＝元）
-  QUOTES = q ? JSON.parse(new TextDecoder().decode(await getBin(q.f))).map(x=>({id:x.id,k:(x.code?x.code+'　':'')+(x.kind==='buzz'?'🟨バズ':'🟦リスト')+'　'+(x.label||x.acc),time:x.slot,segs:[x.text],imgs:x.imgs,quote:x})).filter(x=>MOVE[x.id]!=='drop') : [];
+  QUOTES = q ? JSON.parse(new TextDecoder().decode(await getBin(q.f))).map(x=>({id:x.id,k:(x.code?x.code+'　':'')+(x.kind==='buzz'?'🟨バズ':'🟦リスト')+'　'+(x.label||x.acc),time:x.slot,segs:x.text.split(/\n?=== 次 ===\n?/).map(t=>t.trim()).filter(Boolean),imgs:x.imgs,quote:x})).filter(x=>MOVE[x.id]!=='drop') : [];
   // 本人「2時間おきの話題の見張りもアプリに反映してほしい　なければ対象なしって出るように」：回ごと（作った本／対象なし／まだ／未完）
   const nw=(IDX.news||{})[DAY];
   ROUNDS = nw ? JSON.parse(new TextDecoder().decode(await getBin(nw.f))) : [];
