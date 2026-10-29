@@ -149,7 +149,7 @@ async function start(pass){
   DAY = LS.get('gp_day',null); if(!ds.includes(DAY)) DAY = ds.includes(t)?t:ds[0];
   await loadDay();
   LS.set('gp_pass',pass);
-  if(IDX.cfg){ try{ CFG=JSON.parse(new TextDecoder().decode(await getBin(IDX.cfg))); sendMarks(); render(); }catch(e){} }
+  if(IDX.cfg){ try{ CFG=JSON.parse(new TextDecoder().decode(await getBin(IDX.cfg))); backfillState(); sendMarks(); render(); }catch(e){} }
 }
 let LEFT=[], leftOpen=false, MODE=LS.get('gp_mode','single'), SINGLES=[], QUOTES=[], ROUNDS=[], NEWS=[], MOVE=LS.get('gp_move',{});
 const QS=new URLSearchParams(location.search);
@@ -297,6 +297,8 @@ const KINDS=['弱い','AI感','合ってない','いらない'];
 function M(id){ const m=MARKS[id]||(MARKS[id]={lines:[],kinds:{},post:[],img:[],sent:false}); m.kinds=m.kinds||{}; m.post=m.post||[]; m.img=m.img||[]; return m; }
 function markOf(id,ln){ const m=MARKS[id]; if(!m) return ''; if(m.kinds&&m.kinds[ln]) return m.kinds[ln]; return (m.lines||[]).includes(ln)?'弱い':''; }
 const isMarked=(id,ln)=>!!markOf(id,ln);
+// 2026-10-29 本人「これ見れるようにならないの？」：出した／出さない／回した をこちらに送る（今まではスマホの中だけ）
+function setState(id,v){ const m=M(id); if(m.state===v) return; m.state=v; dirty(m); }
 function dirty(m){ m.sent=false; LS.set('gp_marks',MARKS); clearTimeout(sendT); sendT=setTimeout(sendMarks,4000); }
 function setMark(id,ln,k){ const m=M(id); if(k){ m.kinds[ln]=k; if(!m.lines.includes(ln)) m.lines.push(ln); } else { delete m.kinds[ln]; m.lines=m.lines.filter(x=>x!==ln); } dirty(m); }
 function toggleList(id,key,v){ const m=M(id); m[key]=m[key].includes(v)?m[key].filter(x=>x!==v):m[key].concat(v); dirty(m); return m[key].includes(v); }
@@ -323,11 +325,15 @@ function pickMark(id,ln,sp,isHook){
   document.body.appendChild(o);
 }
 const kc=k=>k==='フックが弱い'?0:k==='ひとこと'?5:KINDS.indexOf(k);
+function backfillState(){ let n=0;
+  Object.entries(MOVE||{}).forEach(([id,v])=>{ const m=M(id); if(m.state===undefined){ m.state=v==='drop'?'drop':'move:'+v; m.sent=false; n++; } });
+  Object.entries(done||{}).forEach(([id,t])=>{ const m=M(id); if(m.state===undefined||String(m.state).startsWith('move')){ m.state='done '+t; m.sent=false; n++; } });
+  if(n) LS.set('gp_marks',MARKS); }
 async function sendMarks(){
   if(!CFG||!KEY||location.hostname==='127.0.0.1') return; const todo=Object.entries(MARKS).filter(([,m])=>!m.sent); if(!todo.length) return;
   try{
     const iv=crypto.getRandomValues(new Uint8Array(12));
-    const ct=new Uint8Array(await crypto.subtle.encrypt({name:'AES-GCM',iv},KEY,new TextEncoder().encode(JSON.stringify({at:new Date().toISOString(),marks:Object.fromEntries(todo.map(([id,m])=>[id,m.lines])),kinds:Object.fromEntries(todo.map(([id,m])=>[id,m.kinds||{}])),post:Object.fromEntries(todo.map(([id,m])=>[id,m.post||[]])),notes:Object.fromEntries(todo.map(([id,m])=>[id,m.notes||{}])),comment:Object.fromEntries(todo.map(([id,m])=>[id,m.comment||''])),img:Object.fromEntries(todo.map(([id,m])=>[id,m.img||[]]))}))));
+    const ct=new Uint8Array(await crypto.subtle.encrypt({name:'AES-GCM',iv},KEY,new TextEncoder().encode(JSON.stringify({at:new Date().toISOString(),marks:Object.fromEntries(todo.map(([id,m])=>[id,m.lines])),kinds:Object.fromEntries(todo.map(([id,m])=>[id,m.kinds||{}])),post:Object.fromEntries(todo.map(([id,m])=>[id,m.post||[]])),notes:Object.fromEntries(todo.map(([id,m])=>[id,m.notes||{}])),comment:Object.fromEntries(todo.map(([id,m])=>[id,m.comment||''])),img:Object.fromEntries(todo.map(([id,m])=>[id,m.img||[]])),state:Object.fromEntries(todo.map(([id,m])=>[id,m.state||'']))}))));
     const all=new Uint8Array(12+ct.length); all.set(iv); all.set(ct,12);
     let bin=''; all.forEach(b=>bin+=String.fromCharCode(b));
     const r=await fetch('https://api.github.com/repos/'+CFG.repo+'/issues/'+CFG.issue+'/comments',{method:'POST',headers:{'Authorization':'Bearer '+CFG.token,'Accept':'application/vnd.github+json'},body:JSON.stringify({body:'gpm1:'+btoa(bin)})});
@@ -432,11 +438,11 @@ function card(p,isNext,tm){
   // 明日に回す／今回は出さない（出していない本だけ）
   const tmr=(()=>{ const d=new Date(DAY+'T00:00:00'); d.setDate(d.getDate()+1); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); })();
   const moveRow=isDone?null:$('div',{class:'btns'},[
-    p.quote||p._round?null:p._left?$('button',{class:'btn sub',text:'今日に回す',onclick:async()=>{ MOVE[p.id]=DAY; LS.set('gp_move',MOVE); await loadDay(); }}):$('button',{class:'btn sub',text:'明日に回す',onclick:async()=>{ MOVE[p.id]=tmr; LS.set('gp_move',MOVE); await loadDay(); }}),
-    $('button',{class:'btn sub',text:'今回は出さない',onclick:async()=>{ MOVE[p.id]='drop'; LS.set('gp_move',MOVE); await loadDay(); }})]);
+    p.quote||p._round?null:p._left?$('button',{class:'btn sub',text:'今日に回す',onclick:async()=>{ MOVE[p.id]=DAY; LS.set('gp_move',MOVE); setState(p.id,'move:'+DAY); await loadDay(); }}):$('button',{class:'btn sub',text:'明日に回す',onclick:async()=>{ MOVE[p.id]=tmr; LS.set('gp_move',MOVE); setState(p.id,'move:'+tmr); await loadDay(); }}),
+    $('button',{class:'btn sub',text:'今回は出さない',onclick:async()=>{ MOVE[p.id]='drop'; LS.set('gp_move',MOVE); setState(p.id,'drop'); await loadDay(); }})]);
   if(p._moved||p._left) body.insertBefore($('div',{class:'when',text:md(p._moved||p._left)+(p._left?' に出していない本':' から回してきた本')}),body.firstChild);
   const mark=$('button',{class:'btn '+(isDone?'undo':'done'),text:isDone?'投稿したを取り消す':'投稿した',onclick:()=>{
-    if(isDone) delete done[p.id]; else { const d=new Date(); done[p.id]=String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0'); open[p.id]=false; }
+    if(isDone){ delete done[p.id]; setState(p.id,''); } else { const d=new Date(); done[p.id]=String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0'); open[p.id]=false; setState(p.id,'done '+DAY+' '+done[p.id]); }
     LS.set('gp_done',done); render(); if(!isDone){ const nx=document.querySelector('.card.next'); if(nx) nx.scrollIntoView({behavior:'smooth',block:'start'}); }
   }});
   body.append($('div',{class:'btns'},[mark]),moveRow||'',msg);
