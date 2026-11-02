@@ -176,7 +176,7 @@ async function loadDay(){
   NEWS = ROUNDS.flatMap(r=>r.posts.map(x=>({...x,_round:r.slot}))).filter(x=>MOVE[x.id]!=='drop');
   render();
   // 画像は先に全部ほどいておく＝「Xで開く」を押した瞬間に渡せる（押した後に待つと iPhone が共有を止める）
-  for(const p of SINGLES.concat(QUOTES,NEWS)) for(const im of p.imgs.concat(p.quote&&p.quote.src_imgs||[])) loadImg(im);
+  for(const p of SINGLES.concat(QUOTES,NEWS)) for(const im of p.imgs.concat(p.quote&&p.quote.src_imgs||[],p.tail_imgs||[])) loadImg(im);
 }
 // 本人「元投稿の画像が表示されない」＝上げた直後など1回失敗すると取り直していなかった。失敗したら3秒おきに3回、カードを開いた時もまた取りに行く
 const LOADING={};
@@ -431,7 +431,11 @@ function card(p,isNext,tm){
     s.split('\n').forEach((ln,j,arr)=>{ const k0=markOf(p.id,ln); const sp=$('span',{class:'ln'+(k0?' mk k'+kc(k0):''),'data-k':k0,text:ln}); const hook=(i===0&&j===s.split('\n').findIndex(x=>x.trim())); if(ln.trim()) sp.addEventListener('click',e=>{ e.stopPropagation(); pickMark(p.id,ln,sp,hook); }); tx.appendChild(sp); if(j<arr.length-1) tx.appendChild(document.createTextNode('\n')); });
     if(i===0) seg.appendChild($('div',{class:'hint',text:'気になる行はタップして種類を選ぶ（直さなくていい）'}));
     if(s.length>140) seg.appendChild($('button',{class:'more',text:'全文を見る',onclick:e=>{tx.classList.toggle('fold');e.target.textContent=tx.classList.contains('fold')?'全文を見る':'たたむ';}}));
-    if(i>0) seg.appendChild($('div',{class:'btns'},[$('button',{class:'btn sub',text:(i+1)+'段目をコピー',onclick:()=>copy(s,msg,(i+1)+'段目')})]));
+    // リストインの最後の段＝固定ポストのスクショ（講習生の実績はここ）を付けて返信する（11/03 本人）
+    const tl=(i>0&&i===p.segs.length-1&&(p.tail_imgs||[]).length)?p.tail_imgs:null;
+    if(tl) seg.appendChild($('div',{class:'thumbs'},tl.map(im=>thumb(im))));
+    if(i>0) seg.appendChild($('div',{class:'btns'},[$('button',{class:'btn sub',text:(i+1)+'段目をコピー',onclick:()=>copy(s,msg,(i+1)+'段目')}),
+      tl?$('button',{class:'btn sub',text:(i+1)+'段目の画像を保存',onclick:()=>saveImgs(tl.map(im=>FILES[im.f]).filter(Boolean),msg)}):null]));
     body.appendChild(seg);
     if(i===0){ if(p.quote) body.append($('div',{class:'sec2',text:'▼ 画像'}), p.imgs.length?myImgs():$('div',{class:'tag',text:'画像なし'}), p.imgs.length?imgChips():''); body.append(main,subs); }
   });
