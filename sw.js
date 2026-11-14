@@ -1,7 +1,7 @@
 // 画面はスマホに控えておく＝電波が弱くてもすぐ開く。index.json は毎回取りに行き、取れない時だけ控えを使う。
 // data の .bin は中身の指紋が名前なので、一度取った物は控えをそのまま使う。
-const C = 'gp-v1794636919';
-const SHELL = ['./', 'index.html', 'manifest.webmanifest', 'icon-180.png', 'icon-192.png', 'icon-512.png'];
+const C = 'gp-v1794637578';
+const SHELL = ['./', 'index.html', 'manifest.webmanifest', 'ush-180.png', 'ush-192.png', 'ush-512.png'];
 self.addEventListener('install', e => { e.waitUntil(caches.open(C).then(c => c.addAll(SHELL.map(s => new Request(s, { cache: 'reload' })))).then(() => self.skipWaiting())); });
 self.addEventListener('activate', e => { e.waitUntil(caches.keys().then(ks => Promise.all(ks.filter(k => k !== C).map(k => caches.delete(k)))).then(() => self.clients.claim())); });
 self.addEventListener('fetch', e => {
@@ -19,7 +19,7 @@ self.addEventListener('fetch', e => {
 // 通知（2026-10-22 本人「投稿の時間と引用できたら」）：PC の post_app_notify.py が Apple の通知の仕組みに送る
 self.addEventListener('push', e => {
   let d = {}; try { d = e.data.json(); } catch (x) { d = { title: 'X投稿アプリ', body: e.data ? e.data.text() : '' }; }
-  e.waitUntil(self.registration.showNotification(d.title || 'X投稿アプリ', { body: d.body || '', icon: 'icon-192.png', badge: 'icon-192.png', data: { tab: d.tab || 'single', id: d.id || '' } }));
+  e.waitUntil(self.registration.showNotification(d.title || 'X投稿アプリ', { body: d.body || '', icon: 'ush-192.png', badge: 'ush-192.png', data: { tab: d.tab || 'single', id: d.id || '' } }));
 });
 self.addEventListener('notificationclick', e => {
   e.notification.close();
