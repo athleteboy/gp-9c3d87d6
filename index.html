@@ -3,11 +3,11 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<title>ジャイロ投稿</title>
+<title>X投稿アプリ</title>
 <meta name="theme-color" content="#15202b">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<meta name="apple-mobile-web-app-title" content="投稿">
+<meta name="apple-mobile-web-app-title" content="X投稿アプリ">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="apple-touch-icon" href="icon-180.png">
 <style>
@@ -102,6 +102,10 @@ a.more{text-decoration:none}
 .login input{font:inherit;font-size:18px;padding:12px;border-radius:12px;border:1px solid var(--line);background:var(--surface);color:var(--ink)}
 .sec{font-size:13px;font-weight:700;color:var(--muted);margin-top:6px}
 .foot{font-size:12px;color:var(--muted);text-align:center}
+.accs{display:flex;gap:6px;align-items:center}
+.acc{border:1px solid var(--line);background:var(--surface);color:var(--ink);border-radius:999px;padding:6px 14px;font:inherit;font-size:14px;font-weight:700}
+.acc.sel{background:var(--ink);border-color:var(--ink);color:var(--ground)}
+.handle{font-size:12px;color:var(--warn);font-weight:700;margin-left:auto;white-space:nowrap}
 button:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 </style>
 </head>
@@ -116,6 +120,12 @@ const today=()=>new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Tokyo',year:'num
 const b64=s=>Uint8Array.from(atob(s),c=>c.charCodeAt(0));
 let KEY=null, IDX=null, DAY=null, FILES={}, open={};
 let done=LS.get('gp_done',{});   // id -> 投稿した時刻
+// 11/14 本人「アカウントごとに表示切り替え」：一覧は index.json の accs（PC の post_app/accounts.json）。ジャイロは今までの days・引用・話題、ほかは accs[].days（単独だけ）
+let ACC=LS.get('gp_acc','gyro');
+const ACCS=()=>(IDX&&IDX.accs&&IDX.accs.length)?IDX.accs:[{id:'gyro',name:'ジャイロ',handle:'@0_q4a'}];
+const accOf=()=>ACCS().find(a=>a.id===ACC)||ACCS()[0];
+const DAYS=()=>ACC==='gyro'?IDX.days:(accOf().days||{});
+const skey=()=>'gp_sched_'+(ACC==='gyro'?'':ACC+'_')+DAY;
 
 async function derive(pass,salt,iter){
   const base=await crypto.subtle.importKey('raw',new TextEncoder().encode(pass),'PBKDF2',false,['deriveKey']);
@@ -139,13 +149,15 @@ function login(err){
     try{ await start(inp.value.trim()); }catch(e){ go.disabled=false; msg.className='msg err'; msg.textContent='合言葉が違うか、つながりません'; }
   }});
   const msg=$('div',{class:'msg'+(err?' err':''),text:err||''});
-  app.append($('div',{class:'login'},[$('h1',{text:'ジャイロ投稿',style:'margin:0;font-size:22px'}),$('div',{text:'最初の1回だけ合言葉を入れてください',style:'color:var(--muted);font-size:14px'}),inp,go,msg]));
+  app.append($('div',{class:'login'},[$('h1',{text:'X投稿アプリ',style:'margin:0;font-size:22px'}),$('div',{text:'最初の1回だけ合言葉を入れてください',style:'color:var(--muted);font-size:14px'}),inp,go,msg]));
 }
 
 async function start(pass){
   IDX=await loadIndex();
   KEY=await derive(pass,IDX.salt,IDX.iter);
-  const t=today(); const ds=Object.keys(IDX.days).sort().filter(d=>d>=t);
+  if(!ACCS().some(a=>a.id===ACC)) ACC='gyro';
+  if(ACC!=='gyro') MODE='single';
+  const t=today(); const ds=Object.keys(DAYS()).sort().filter(d=>d>=t);
   DAY = LS.get('gp_day',null); if(!ds.includes(DAY)) DAY = ds.includes(t)?t:ds[0];
   await loadDay();
   LS.set('gp_pass',pass);
@@ -153,13 +165,13 @@ async function start(pass){
 }
 let LEFT=[], leftOpen=false, MODE=LS.get('gp_mode','single'), SINGLES=[], QUOTES=[], ROUNDS=[], NEWS=[], MOVE=LS.get('gp_move',{});
 const QS=new URLSearchParams(location.search);
-if(QS.get('tab')){ MODE=QS.get('tab'); LS.set('gp_mode',MODE); if(QS.get('id')) open[QS.get('id')]=true; }
-navigator.serviceWorker&&navigator.serviceWorker.addEventListener('message',e=>{ const o=e.data&&e.data.open; if(!o) return; MODE=o.tab||MODE; LS.set('gp_mode',MODE); if(o.id) open[o.id]=true; if(IDX) loadIndex().then(n=>{IDX=n;return loadDay();}); });
+if(QS.get('tab')){ ACC='gyro'; LS.set('gp_acc',ACC); MODE=QS.get('tab'); LS.set('gp_mode',MODE); if(QS.get('id')) open[QS.get('id')]=true; }
+navigator.serviceWorker&&navigator.serviceWorker.addEventListener('message',e=>{ const o=e.data&&e.data.open; if(!o) return; ACC='gyro'; LS.set('gp_acc',ACC); MODE=o.tab||MODE; LS.set('gp_mode',MODE); if(o.id) open[o.id]=true; if(IDX) loadIndex().then(n=>{IDX=n;return loadDay();}); });
 async function loadDay(){
-  const d=IDX.days[DAY], q=(IDX.quotes||{})[DAY];
+  const q=ACC==='gyro'?(IDX.quotes||{})[DAY]:null;
   // 本人「今日投稿できなかったものを明日に回したい」：全部の日を読み、回した物・前日の残りを足す（MOVE＝id→回した日 or 'drop'）
   const ALL={};
-  for(const [dd,v] of Object.entries(IDX.days)){ try{ ALL[dd]=JSON.parse(new TextDecoder().decode(await getBin(v.f))).map(x=>({...x,_from:dd})); }catch(e){ ALL[dd]=[]; } }
+  for(const [dd,v] of Object.entries(DAYS())){ try{ ALL[dd]=JSON.parse(new TextDecoder().decode(await getBin(v.f))).map(x=>({...x,_from:dd})); }catch(e){ ALL[dd]=[]; } }
   const yday=Object.keys(ALL).filter(x=>x<DAY).sort().pop();
   SINGLES=[]; LEFT=[];
   for(const [dd,ps] of Object.entries(ALL)) for(const x of ps){
@@ -171,7 +183,7 @@ async function loadDay(){
   // 引用は単独と同じカードで出す（time＝回の時刻・segs＝引用文・quote＝元）
   QUOTES = q ? JSON.parse(new TextDecoder().decode(await getBin(q.f))).map(x=>({id:x.id,k:(x.code?x.code+'　':'')+(x.kind==='buzz'?'🟨バズ':'🟦リスト')+'　'+(x.label||x.acc),time:x.slot,segs:x.text.split(/\n?=== 次 ===\n?/).map(t=>t.trim()).filter(Boolean),imgs:x.imgs,quote:x})).filter(x=>MOVE[x.id]!=='drop') : [];
   // 本人「2時間おきの話題の見張りもアプリに反映してほしい　なければ対象なしって出るように」：回ごと（作った本／対象なし／まだ／未完）
-  const nw=(IDX.news||{})[DAY];
+  const nw=ACC==='gyro'?(IDX.news||{})[DAY]:null;
   ROUNDS = nw ? JSON.parse(new TextDecoder().decode(await getBin(nw.f))) : [];
   NEWS = ROUNDS.flatMap(r=>r.posts.map(x=>({...x,_round:r.slot}))).filter(x=>MOVE[x.id]!=='drop');
   render();
@@ -193,7 +205,7 @@ function thumb(im){ if(!FILES[im.f]) loadImg(im); return $('img',{'data-f':im.f,
 const toM=t=>{const [a,b]=(t||'99:99').split(':').map(Number);return a*60+b}, toT=m=>String(Math.floor(m/60)).padStart(2,'0')+':'+String(m%60).padStart(2,'0');
 const nowM=()=>{const d=new Date();return d.getHours()*60+d.getMinutes()};
 function sched(){
-  const key='gp_sched_'+DAY, S=LS.get(key,{});
+  const key=skey(), S=LS.get(key,{});
   const eff=p=>S[p.id]||p.time;
   // 回してきた本（時刻なし）は、その日の最後の本の後ろに45〜100分あけて置く
   const noT=SINGLES.filter(p=>!eff(p)&&!done[p.id]);
@@ -215,7 +227,7 @@ function sched(){
       S._at=toT(nowM()); LS.set(key,S);
     }
   }
-  if(DAY===today()) sendSched(eff);
+  if(DAY===today() && ACC==='gyro') sendSched(eff);   // 通知の目覚ましはジャイロの分だけ
   return eff;
 }
 // 本人「変わった時間で通知出せない？」：今日の残りの時刻をメモ欄へ（変わった時だけ）。PC の目覚ましが5分おきに読んで置き直す
@@ -241,27 +253,30 @@ function sendSched(eff){
 function list(){ return MODE==='quote'?QUOTES:MODE==='news'?NEWS:SINGLES; }
 function render(){
   const app=document.getElementById('app'); app.textContent='';
-  const ds=Object.keys(IDX.days).sort().filter(d=>d>=today());   // 昨日のタブは出さない（本人「出ちゃうと分かりづらい」）。昨日の分は今日の下の「昨日の残り」だけ
+  const ds=Object.keys(DAYS()).sort().filter(d=>d>=today());   // 昨日のタブは出さない（本人「出ちゃうと分かりづらい」）。昨日の分は今日の下の「昨日の残り」だけ
   const eff = MODE!=='single' ? (p=>p.time) : sched();
   const L=list().slice().sort((a,b)=>toM(eff(a))-toM(eff(b)));
   // 本人「ジャンルも書いて欲しい　SNS 1/2 とか」「引用は元投稿のアカウント名も」
   if(MODE==='quote') L.forEach(p=>{ p._g=(p.quote.kind==='buzz'?'🟨 ':'🟦 ')+(p.quote.name||p.quote.acc); });
   else if(MODE==='news') L.forEach(p=>{ p._g='🟥 話題 '+p._round+' の回'; });
-  else { const by={}; L.forEach(p=>{ const m=/^\d+\s+(.+?)｜/.exec(p.k||''); const g=m?m[1]:'その他'; (by[g]=by[g]||[]).push(p); });
+  else { const by={}; L.forEach(p=>{ const m=/^\d+\s+(.+?)｜/.exec(p.k||''); const g=m?m[1]:ACC==='gyro'?'その他':accOf().name; (by[g]=by[g]||[]).push(p); });
     Object.entries(by).forEach(([g,ps])=>ps.forEach((p,i)=>{ p._g=g+' '+(i+1)+'/'+ps.length; })); }
   const n=L.length, k=L.filter(p=>done[p.id]).length;
   const nq=(IDX.quotes&&IDX.quotes[DAY]||{}).n||0, nn=(IDX.news&&IDX.news[DAY]||{}).n||0;
   const tab=(m,lab)=>$('button',{class:'day'+(MODE===m?' sel':''),text:lab,onclick:()=>{MODE=m;LS.set('gp_mode',m);render();scrollTo(0,0);}});
+  const ac=accOf();
+  const accBar=ACCS().length>1?$('div',{class:'accs'},[...ACCS().map(a=>$('button',{class:'acc'+(a.id===ACC?' sel':''),text:a.name,onclick:async()=>{ if(a.id===ACC) return; ACC=a.id; LS.set('gp_acc',ACC); if(ACC!=='gyro'){MODE='single';} else MODE=LS.get('gp_mode','single'); const ds2=Object.keys(DAYS()).sort().filter(d=>d>=today()); if(!ds2.includes(DAY)) DAY=ds2.includes(today())?today():ds2[0]; await loadDay(); scrollTo(0,0); }})),$('span',{class:'handle',text:ac.handle?'X は '+ac.handle+' で出す':''})]):null;
   const top=$('div',{class:'top'},[
+    accBar,
     $('div',{class:'bar'},[
       $('div',{class:'days'},ds.map(d=>$('button',{class:'day'+(d===DAY?' sel':'')+(d===today()?' today':''),onclick:async()=>{DAY=d;LS.set('gp_day',d);await loadDay();}},d===today()?[$('span',{class:'tbadge',text:'今日'}),' '+md(d)]:[md(d)]))),
       $('button',{class:'icon',text:'更新',onclick:e=>{e.target.textContent='…';location.reload();}})   // 11/03 中身だけ読み直すと画面の新しい作り（リストインの最後の画像）が入らなかった＝画面ごと読み直す
     ]),
-    $('div',{class:'bar'},[tab('single','単独 '+((IDX.days[DAY]||{}).n||0)+'本'),tab('quote','引用 '+nq+'本'),tab('news','話題 '+nn+'本')]),
+    ACC==='gyro'?$('div',{class:'bar'},[tab('single','単独 '+((IDX.days[DAY]||{}).n||0)+'本'),tab('quote','引用 '+nq+'本'),tab('news','話題 '+nn+'本')]):null,
     $('div',{class:'prog'},[$('span',{},[$('b',{text:k+'/'+n}),' 本 済み']),$('div',{class:'meter'},[$('i',{style:'width:'+(n?k/n*100:0)+'%'})])])
   ]);
   app.appendChild(top);
-  const S=LS.get('gp_sched_'+DAY,{});
+  const S=LS.get(skey(),{});
   if(MODE==='single' && S._at) app.appendChild($('div',{class:'tag',text:'↻ '+S._at+' に、出せていない分の時刻を今から組み直しました'}));
   if(MODE==='news'){
     // 回ごとに上から：作った本はカード、作る物が無かった回は「対象なし」と理由
@@ -278,7 +293,7 @@ function render(){
     app.appendChild(notifBox());
     return;
   }
-  if(!n){ app.appendChild($('div',{class:'empty',text:MODE==='quote'?'この日の引用はまだありません（08:00・11:30・14:30・18:00・20:00 の回で届きます）':'この日の投稿はまだありません。予約表で「予約に入れる」を押した物がここに出ます'})); }
+  if(!n){ app.appendChild($('div',{class:'empty',text:MODE==='quote'?'この日の引用はまだありません（08:00・11:30・14:30・18:00・20:00 の回で届きます）':ACC==='gyro'?'この日の投稿はまだありません。予約表で「予約に入れる」を押した物がここに出ます':'この日の'+accOf().name+'の投稿はまだありません'})); }
   const rest=L.filter(p=>!done[p.id]), fin=L.filter(p=>done[p.id]).sort((a,b)=>done[b.id]<done[a.id]?-1:1);
   const nx=rest[0]&&rest[0].id;
   rest.forEach(p=>app.appendChild(card(p,p.id===nx,eff(p))));
