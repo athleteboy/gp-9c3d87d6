@@ -1,6 +1,6 @@
 // 画面はスマホに控えておく＝電波が弱くてもすぐ開く。index.json は毎回取りに行き、取れない時だけ控えを使う。
 // data の .bin は中身の指紋が名前なので、一度取った物は控えをそのまま使う。
-const C = 'gp-v1794645617';
+const C = 'gp-v1794646130';
 const SHELL = ['./', 'index.html', 'manifest.webmanifest', 'ush2-180.png', 'ush2-192.png', 'ush2-512.png'];
 self.addEventListener('install', e => { e.waitUntil(caches.open(C).then(c => c.addAll(SHELL.map(s => new Request(s, { cache: 'reload' })))).then(() => self.skipWaiting())); });
 self.addEventListener('activate', e => { e.waitUntil(caches.keys().then(ks => Promise.all(ks.filter(k => k !== C).map(k => caches.delete(k)))).then(() => self.clients.claim())); });
