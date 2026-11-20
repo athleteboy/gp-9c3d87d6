@@ -156,7 +156,7 @@ async function start(pass){
   IDX=await loadIndex();
   KEY=await derive(pass,IDX.salt,IDX.iter);
   if(!ACCS().some(a=>a.id===ACC)) ACC='gyro';
-  if(ACC!=='gyro') MODE='single';
+  if(ACC!=='gyro' && !(MODE==='quote' && accOf().quotes)) MODE='single';
   const t=today(); const ds=Object.keys(DAYS()).sort().filter(d=>d>=t);
   DAY = LS.get('gp_day',null); if(!ds.includes(DAY)) DAY = ds.includes(t)?t:ds[0];
   await loadDay();
@@ -168,7 +168,7 @@ const QS=new URLSearchParams(location.search);
 if(QS.get('tab')){ ACC='gyro'; LS.set('gp_acc',ACC); MODE=QS.get('tab'); LS.set('gp_mode',MODE); if(QS.get('id')) open[QS.get('id')]=true; }
 navigator.serviceWorker&&navigator.serviceWorker.addEventListener('message',e=>{ const o=e.data&&e.data.open; if(!o) return; ACC='gyro'; LS.set('gp_acc',ACC); MODE=o.tab||MODE; LS.set('gp_mode',MODE); if(o.id) open[o.id]=true; if(IDX) loadIndex().then(n=>{IDX=n;return loadDay();}); });
 async function loadDay(){
-  const q=ACC==='gyro'?(IDX.quotes||{})[DAY]:null;
+  const q=ACC==='gyro'?(IDX.quotes||{})[DAY]:(accOf().quotes||{})[DAY];   // 11/20 ほかの垢も引用を分ける
   // 本人「今日投稿できなかったものを明日に回したい」：全部の日を読み、回した物・前日の残りを足す（MOVE＝id→回した日 or 'drop'）
   const ALL={};
   for(const [dd,v] of Object.entries(DAYS())){ try{ ALL[dd]=JSON.parse(new TextDecoder().decode(await getBin(v.f))).map(x=>({...x,_from:dd})); }catch(e){ ALL[dd]=[]; } }
@@ -262,7 +262,7 @@ function render(){
   else { const by={}; L.forEach(p=>{ const m=/^\d+\s+(.+?)｜/.exec(p.k||''); const g=m?m[1]:ACC==='gyro'?'その他':accOf().name; (by[g]=by[g]||[]).push(p); });
     Object.entries(by).forEach(([g,ps])=>ps.forEach((p,i)=>{ p._g=g+' '+(i+1)+'/'+ps.length; })); }
   const n=L.length, k=L.filter(p=>done[p.id]).length;
-  const nq=(IDX.quotes&&IDX.quotes[DAY]||{}).n||0, nn=(IDX.news&&IDX.news[DAY]||{}).n||0;
+  const nq=((ACC==='gyro'?IDX.quotes:accOf().quotes)||{})[DAY]?.n||0, nn=(IDX.news&&IDX.news[DAY]||{}).n||0;
   const tab=(m,lab)=>$('button',{class:'day'+(MODE===m?' sel':''),text:lab,onclick:()=>{MODE=m;LS.set('gp_mode',m);render();scrollTo(0,0);}});
   const ac=accOf();
   const accBar=ACCS().length>1?$('div',{class:'accs'},[...ACCS().map(a=>$('button',{class:'acc'+(a.id===ACC?' sel':''),text:a.name,onclick:async()=>{ if(a.id===ACC) return; ACC=a.id; LS.set('gp_acc',ACC); if(ACC!=='gyro'){MODE='single';} else MODE=LS.get('gp_mode','single'); const ds2=Object.keys(DAYS()).sort().filter(d=>d>=today()); if(!ds2.includes(DAY)) DAY=ds2.includes(today())?today():ds2[0]; await loadDay(); scrollTo(0,0); }})),$('span',{class:'handle',text:ac.handle?'X は '+ac.handle+' で出す':''})]):null;
@@ -272,7 +272,7 @@ function render(){
       $('div',{class:'days'},ds.map(d=>$('button',{class:'day'+(d===DAY?' sel':'')+(d===today()?' today':''),onclick:async()=>{DAY=d;LS.set('gp_day',d);await loadDay();}},d===today()?[$('span',{class:'tbadge',text:'今日'}),' '+md(d)]:[md(d)]))),
       $('button',{class:'icon',text:'更新',onclick:e=>{e.target.textContent='…';location.reload();}})   // 11/03 中身だけ読み直すと画面の新しい作り（リストインの最後の画像）が入らなかった＝画面ごと読み直す
     ]),
-    ACC==='gyro'?$('div',{class:'bar'},[tab('single','単独 '+((IDX.days[DAY]||{}).n||0)+'本'),tab('quote','引用 '+nq+'本'),tab('news','話題 '+nn+'本')]):null,
+    ACC==='gyro'?$('div',{class:'bar'},[tab('single','単独 '+((IDX.days[DAY]||{}).n||0)+'本'),tab('quote','引用 '+nq+'本'),tab('news','話題 '+nn+'本')]):accOf().quotes?$('div',{class:'bar'},[tab('single','単独 '+((DAYS()[DAY]||{}).n||0)+'本'),tab('quote','引用 '+nq+'本')]):null,
     $('div',{class:'prog'},[$('span',{},[$('b',{text:k+'/'+n}),' 本 済み']),$('div',{class:'meter'},[$('i',{style:'width:'+(n?k/n*100:0)+'%'})])])
   ]);
   app.appendChild(top);
